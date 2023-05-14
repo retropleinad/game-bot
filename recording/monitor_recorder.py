@@ -1,39 +1,48 @@
 """
 https://www.thepythoncode.com/article/make-screen-recorder-python
+https://towardsdatascience.com/developing-your-own-screen-recording-software-with-python-927ab25fbfc6
 """
 
 import cv2
 import numpy as np
 import pyautogui
+import time
 
-# Display screen resolution
-SCREEN_SIZE = tuple(pyautogui.size())
+# Obtain the screen height and width
+screen_width, screen_height = pyautogui.size()
+screen_size = (screen_width, screen_height)
 
-# Define the codc
-fourcc = cv2.VideoWriter_fourcc(*"XVID")
+# Creating the 4-character
+four_cc = cv2.VideoWriter_fourcc(*'MJPG')
 
-# fps
-fps = 12.
+# Declare fps
+fps = 30.
 
-# Create the video write object
-out = cv2.VideoWriter('output.avi', fourcc, fps, SCREEN_SIZE)
+# Output directory
+file_name = 'screen_test.avi'
+result = cv2.VideoWriter(file_name, four_cc, fps, screen_size)
 
-# The time you want to record in seconds
-record_seconds = 10
+# Setting the start timer for the required duration
+start_time = time.time()
+duration = 15
+end_time = start_time + duration
+current_time = time.time()
 
-for i in range(int(record_seconds * fps)):
-    # Make a screenshot
-    img = pyautogui.screenshot()
-    # Convert these pizels to a proper numpy array to work with Open CV
-    frame = np.array(img)
-    # Convert colors from BGR to RGB
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    # Write the frame
-    out.write(frame)
-    # Show the frame
-    # cv2.imshow('screenshot', frame)
+while current_time < end_time:
+
+    image = pyautogui.screenshot()
+    frames = np.array(image)
+    frames_RGB = cv2.cvtColor(frames, cv2.COLOR_BGR2RGB)
+
+    # Save the result
+    result.write(frames_RGB)
+
+    # update time
+    current_time = time.time()
 
 
-# Make sure everything is closed when exited
-cv2.destroyAllWindows()
-out.release()
+
+# Next step:
+# 1.) Finish towardsdatascience tutorial
+# 2.) Record for a specific screen
+# 3.) How are we lining up the screen with the keys/mouse? special video format?

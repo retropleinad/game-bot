@@ -28,4 +28,14 @@ out = cv2.VideoWriter('output.avi', fourcc, fps, tuple(w.size))
 
 for i in range(int(record_seconds * fps)):
     # Make a screenshot
-    img = pyautogui.screenshot(region=(w.left,))
+    img = pyautogui.screenshot(region=(w.left, w.top, w.width, w.height))
+    # Convert these pizels to a proper np array to work with OpenCV
+    frame = np.array(img)
+    # Convert colors from BGR to RGB
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # write the frame
+    out.write(frame)
+
+# Make sure everything is closed
+cv2.destroyAllWindows()
+out.release()
