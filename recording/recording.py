@@ -3,48 +3,82 @@ import numpy as np
 import pyautogui
 import pygetwindow as gw
 import time
+import os
+import csv
 
 from pynput import keyboard
 from pynput import mouse
 
+
+TEST_FILE = 'D:/Python Projects/gameBot/recording output/gameplay'
+
+
 class Recorder:
 
-    def __init__(self, out_filename, window_name='minecraft', codec='MJPG', fps=30., record_seconds=10):
-        self.out_filename = out_filename
-        self.window_name = window_name
-        self.codec = codec
-        self.fps = fps
-        self.record_seconds = record_seconds
-
+    def __init__(self, out_filename, window_name='minecraft', codec='MJPG', fps=30.):
         self.codec = cv2.VideoWriter_fourcc(*'{0}'.format(codec))
         self.window = gw.getWindowsWithTitle(window_name)[0]
-        self.screen_width, self.screen_height = window.size
-        self.screen_size = (screen_width, screen_height)
+        self.screen_width, self.screen_height = self.window.size
+        self.screen_size = (self.screen_width, self.screen_height)
 
-        self.out = cv2.VideoWriter(out_file, codec, fps, screen_size)
+        self.out = cv2.VideoWriter(out_filename + '.avi', self.codec, fps, self.screen_size)
 
-        self.pressed = []
-        self.released = []
+        self.keys_pressed = []
+        self.keys_released = []
+        self.mouse_moved = []
+        self.mouse_clicked = []
+
         self.keyboard_out = []
+        self.keyboard_outfile = out_filename + '.csv'
+        self.outfile_headers = ('timestamp', 'keys_pressed', 'keys_released', 'mouse_moved', 'mouse_clicked')
 
     def on_press(self, key):
         try:
             k = key.char
         except:
             k = key.name
-        self.pressed.append(k)
+        self.keys_pressed.append(k)
 
     def on_release(self, key):
         try:
             k = key.char
         except:
             k = key.name
-        self.released.append(k)
+        self.keys_released.append(k)
 
-    def run(self):
+    def on_move(self, x, y):
+        self.mouse_moved.append((x, y))
+
+    def on_click(self, x, y, button, pressed):
+        button_clicked = None
+
+        if button == mouse.Button.left:
+            button_clicked = 'left'
+        elif button == mouse.Button.right:
+            button_clicked = 'right'
+
+        if pressed:
+            self.mouse_clicked.append((x, y, button_clicked, 'pressed'))
+        else:
+            self.mouse_clicked.append((x, y, button_clicked, 'released'))
+
+    def clean_mouse_position(self):
+        pass
+
+    def clean_csv(self):
+        pass
+
+    def run(self, record_seconds=10):
         start_time = time.time()
-        end_time = start_time + self.record_seconds
+        end_time = start_time + record_seconds
         current_time = time.time()
+
+        keyboard_listener = keyboard.Listener(on_press=self.on_press,
+                                              on_release=self.on_release)
+        mouse_listener = mouse.Listener(on_move=self.on_move,
+                                        on_click=self.on_click)
+        keyboard_listener.start()
+        mouse_listener.start()
 
         while current_time < end_time:
             image = pyautogui.screenshot(region=(self.window.left,
@@ -53,46 +87,35 @@ class Recorder:
                                                  self.window.height))
             frame = np.array(image)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            out.write(frame)
+            self.out.write(frame)
+
+            self.keyboard_out.append([current_time,
+                                      self.keys_pressed, self.keys_released,
+                                      self.mouse_moved, self.mouse_clicked])
+            self.keys_pressed = []
+            self.keys_released = []
+            self.mouse_moved = []
+            self.mouse_clicked = []
+
             current_time = time.time()
+
+        if os.path.isfile(self.keyboard_outfile):
+            os.remove(self.keyboard_outfile)
+
+        with open(self.keyboard_outfile, newline='', mode='a') as csv_out:
+            writer = csv.writer(csv_out, delimiter=',')
+            writer.writerow(self.outfile_headers)
+
+            for k in self.keyboard_out:
+                writer.writerow(k)
 
     def quit(self):
         cv2.destroyAllWindows()
         self.out.release()
 
 
-# What is the name of the window
-window_name = 'minecraft'
+r = Recorder(TEST_FILE)
+r.run()
+r.quit()
 
-# Define the codec
-codec = cv2.VideoWriter_fourcc(*'MJPG')
-
-# Define the fps
-fps = 30.
-
-# Get the window
-window = gw.getWindowsWithTitle(window_name)[0]
-
-# Get the screen height and width
-screen_width, screen_height = window.size
-screen_size = (screen_width, screen_height)
-
-# Create the video write object
-out_file = '../gameplay.avi'
-out = cv2.VideoWriter(out_file, codec, fps, screen_size)
-
-# Set the start timer for the required duration
-record_seconds = 10
-start_time = time.time()
-end_time = start_time + record_seconds
-current_time = time.time()
-
-while current_time < end_time:
-    image = pyautogui.screenshot(region=(window.left, window.top, window.width, window.height))
-    frame = np.array(image)
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    out.write(frame)
-    current_time = time.time()
-
-cv2.destroyAllWindows()
-out.release()
+# Next comment everything
