@@ -1,3 +1,7 @@
+"""
+recording.py:
+"""
+
 import cv2
 import numpy as np
 import pyautogui
@@ -51,6 +55,7 @@ class Recorder:
     10.) self.keyboard_out: Used to keep track of data for all frames
     11.) self.keyboard_outfile: The name of the file we're exporting to
     12.) self.outfile_headers: The headers for the export file
+    13.) self.df_out: The dataframe we use for transforming the output
     """
 
     def __init__(self, out_filename, window_name='minecraft', codec='MJPG', fps=30.):
@@ -74,7 +79,9 @@ class Recorder:
         # Initialize variables needed for creating the outfile
         self.keyboard_out = []
         self.keyboard_outfile = out_filename + '.csv'
-        self.outfile_headers = ('timestamp', 'keys_pressed', 'keys_released', 'mouse_moved', 'mouse_clicked')
+        self.outfile_headers = ('timestamp', 'keys_pressed', 'keys_released',
+                                'mouse_moved', 'mouse_clicked')
+        self.df_out = None
 
     """
     pynput key functions
@@ -125,13 +132,26 @@ class Recorder:
             self.mouse_clicked.append((x, y, button_clicked, 'released'))
 
     def clean_mouse_position(self):
+        # Calculate where we clicked ... that is above all else
+        self.df_out.loc[self.df_out['mouse_clicked'].str.len() != 0, 'mouse_x'] = self.df_out['mouse_clicked']
+        # Calculate max position of the movements
         pass
+    
+    def remove_empty_frames(self):
+        # Remove columns where nothing happened during that frame
+        # Should we also remove ones that are just mouse movement?
+        self.df_out = self.df_out[(self.df_out.keys_pressed.str.len() != 0) |
+                                  (self.df_out.keys_released.str.len() != 0) |
+                                  (self.df_out.mouse_moved.str.len() != 0) |
+                                  (self.df_out.mouse_clicked.str.len() != 0)]
 
     def clean_output(self):
-        df_out = pd.DataFrame(self.keyboard_out, columns=self.outfile_headers)
+        self.df_out = pd.DataFrame(self.keyboard_out, columns=self.outfile_headers)
         # Remove empty frames
-        # For each key, track
+        self.remove_empty_frames()
         # Keep track of mouse position
+        self.clean_mouse_position()
+        # For each key, track
         # Make sure positions are right
 
     def run(self, record_seconds=10):
@@ -164,6 +184,8 @@ class Recorder:
             self.mouse_clicked = []
 
             current_time = time.time()
+
+        self.clean_output()
 
         if os.path.isfile(self.keyboard_outfile):
             os.remove(self.keyboard_outfile)
