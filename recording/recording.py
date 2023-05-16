@@ -71,17 +71,38 @@ class Recorder:
         self.out = cv2.VideoWriter(out_filename + '.avi', self.codec, fps, self.screen_size)
 
         # Initialize lists used for tracking mouse and keyboard
-        self.keys_pressed = []
-        self.keys_released = []
-        self.mouse_moved = []
-        self.mouse_clicked = []
+        self.frame_tracking = dict()
+        self.initialize_frame_tracking()
 
         # Initialize variables needed for creating the outfile
         self.keyboard_out = []
         self.keyboard_outfile = out_filename + '.csv'
-        self.outfile_headers = ('timestamp', 'keys_pressed', 'keys_released',
-                                'mouse_moved', 'mouse_clicked')
-        self.df_out = None
+        self.df_out = pd.DataFrame()
+
+    def initialize_frame_tracking(self):
+        self.frame_tracking = {
+            'timestamp': 0.,
+            'mouse_x': 0.,
+            'mouse_y': 0.,
+            '1': 0.,
+            '2': 0.,
+            '3': 0.,
+            '4': 0.,
+            '5': 0.,
+            '6': 0.,
+            '7': 0.,
+            '8': 0.,
+            '9': 0.,
+            'space': 0.,
+            'w': 0.,
+            'a': 0.,
+            's': 0.,
+            'd': 0.,
+            'e': 0.,
+            'shift': 0.,
+            'lmouse': 0.,
+            'rmouse': 0.
+        }
 
     """
     pynput key functions
@@ -97,14 +118,14 @@ class Recorder:
             k = key.char
         except:
             k = key.name
-        self.keys_pressed.append(k)
+        self.frame_tracking[k] = 1.
 
     def on_release(self, key):
         try:
             k = key.char
         except:
             k = key.name
-        self.keys_released.append(k)
+        self.frame_tracking[k] = 1.
 
     """
     pynput mouse functions
@@ -115,21 +136,20 @@ class Recorder:
     """
 
     def on_move(self, x, y):
-        self.mouse_moved.append((x, y))
+        self.frame_tracking['mouse_x'] = x
+        self.frame_tracking['mouse_y'] = y
 
     def on_click(self, x, y, button, pressed):
         # Determine which button is clicked and save it
         button_clicked = None
         if button == mouse.Button.left:
-            button_clicked = 'left'
+            self.frame_tracking['lmouse'] = 1.,
         elif button == mouse.Button.right:
-            button_clicked = 'right'
+            self.frame_tracking['rmouse'] = 1.
 
         # Keep track of if the button was pressed or released and save it
-        if pressed:
-            self.mouse_clicked.append((x, y, button_clicked, 'pressed'))
-        else:
-            self.mouse_clicked.append((x, y, button_clicked, 'released'))
+        self.frame_tracking['mouse_x'] = x
+        self.frame_tracking['mouse_y'] = y
 
     def clean_mouse_position(self):
         # Calculate where we clicked ... that is above all else
@@ -148,9 +168,9 @@ class Recorder:
     def clean_output(self):
         self.df_out = pd.DataFrame(self.keyboard_out, columns=self.outfile_headers)
         # Remove empty frames
-        self.remove_empty_frames()
+        # self.remove_empty_frames()
         # Keep track of mouse position
-        self.clean_mouse_position()
+        # self.clean_mouse_position()
         # For each key, track
         # Make sure positions are right
 
@@ -175,13 +195,8 @@ class Recorder:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             self.out.write(frame)
 
-            self.keyboard_out.append([current_time,
-                                      self.keys_pressed, self.keys_released,
-                                      self.mouse_moved, self.mouse_clicked])
-            self.keys_pressed = []
-            self.keys_released = []
-            self.mouse_moved = []
-            self.mouse_clicked = []
+            self.keyboard_out.append(self.frame_tracking)
+            self.initialize_frame_tracking()
 
             current_time = time.time()
 
@@ -192,7 +207,6 @@ class Recorder:
 
         with open(self.keyboard_outfile, newline='', mode='a') as csv_out:
             writer = csv.writer(csv_out, delimiter=',')
-            writer.writerow(self.outfile_headers)
 
             for k in self.keyboard_out:
                 writer.writerow(k)
