@@ -1,10 +1,13 @@
+"""
+recording.py:
+"""
+
 import cv2
 import numpy as np
 import pyautogui
 import pygetwindow as gw
 import time
 import os
-import csv
 import pandas as pd
 
 from pynput import keyboard
@@ -51,6 +54,7 @@ class Recorder:
     10.) self.keyboard_out: Used to keep track of data for all frames
     11.) self.keyboard_outfile: The name of the file we're exporting to
     12.) self.outfile_headers: The headers for the export file
+    13.) self.df_out: The dataframe we use for transforming the output
     """
 
     def __init__(self, out_filename, window_name='minecraft', codec='MJPG', fps=30.):
@@ -66,15 +70,29 @@ class Recorder:
         self.out = cv2.VideoWriter(out_filename + '.avi', self.codec, fps, self.screen_size)
 
         # Initialize lists used for tracking mouse and keyboard
-        self.keys_pressed = []
-        self.keys_released = []
-        self.mouse_moved = []
-        self.mouse_clicked = []
+        self.frame_tracking = dict()
+        self.initialize_frame_tracking()
 
         # Initialize variables needed for creating the outfile
         self.keyboard_out = []
         self.keyboard_outfile = out_filename + '.csv'
-        self.outfile_headers = ('timestamp', 'keys_pressed', 'keys_released', 'mouse_moved', 'mouse_clicked')
+        self.df_out = pd.DataFrame()
+
+    def initialize_frame_tracking(self):
+        self.frame_tracking = {
+            'id': 0,
+            'timestamp': 0.,
+            'mouse_x': 0.,
+            'mouse_y': 0.
+        }
+
+        keys = ('1', '2', '3', '4', '5', '6', '7', '8', '9',
+                'space', 'w', 'a', 's', 'd', 'shift',
+                'lmouse', 'rmouse')
+
+        for key in keys:
+            self.frame_tracking[key + '_press'] = 0.
+            self.frame_tracking[key + '_release'] = 0.
 
     """
     pynput key functions
@@ -90,48 +108,64 @@ class Recorder:
             k = key.char
         except:
             k = key.name
-        self.keys_pressed.append(k)
+        self.frame_tracking[k + '_press'] = 1.
 
     def on_release(self, key):
         try:
             k = key.char
         except:
             k = key.name
-        self.keys_released.append(k)
+        self.frame_tracking[k + '_release'] = 1.
 
     """
     pynput mouse functions
     
     on_move: tells the listener what to do when the mouse is moved
-    on_release: tells the listener what to do when the mouse button is released
+    on_click: tells the listener what to do when the mouse button is clicked
     
     """
 
     def on_move(self, x, y):
-        self.mouse_moved.append((x, y))
+        self.frame_tracking['mouse_x'] = x
+        self.frame_tracking['mouse_y'] = y
 
     def on_click(self, x, y, button, pressed):
         # Determine which button is clicked and save it
-        button_clicked = None
         if button == mouse.Button.left:
-            button_clicked = 'left'
+            if pressed:
+                self.frame_tracking['lmouse_press'] = 1.
+            else:
+                self.frame_tracking['lmouse_release'] = 1.
         elif button == mouse.Button.right:
-            button_clicked = 'right'
+            if pressed:
+                self.frame_tracking['rmouse_press'] = 1.
+            else:
+                self.frame_tracking['rmouse_release'] = 1.
 
         # Keep track of if the button was pressed or released and save it
-        if pressed:
-            self.mouse_clicked.append((x, y, button_clicked, 'pressed'))
-        else:
-            self.mouse_clicked.append((x, y, button_clicked, 'released'))
-
-    def clean_mouse_position(self):
-        pass
+        self.frame_tracking['mouse_x'] = x
+        self.frame_tracking['mouse_y'] = y
+    
+    def remove_empty_frames(self):
+        # Remove columns where nothing happened during that frame
+        # Should we also remove ones that are just mouse movement?
+        i = 0
+        code = 'self.df_out = self.df_out['
+        for key, value in self.frame_tracking.items():
+            if key not in ('timestamp', 'id'):
+                code += '(self.df_out[\'{0}\'] != 0.0) '.format(key)
+                if i == len(self.frame_tracking) - 1:
+                    code += ']'
+                else:
+                    code += '|'
+            i += 1
+        exec(code)
 
     def clean_output(self):
-        df_out = pd.DataFrame(self.keyboard_out, columns=self.outfile_headers)
+        self.df_out = pd.DataFrame.from_dict(self.keyboard_out)
         # Remove empty frames
-        # For each key, track
-        # Keep track of mouse position
+        self.remove_empty_frames()
+        # For each key, track held vs released
         # Make sure positions are right
 
     def run(self, record_seconds=10):
@@ -146,6 +180,8 @@ class Recorder:
         keyboard_listener.start()
         mouse_listener.start()
 
+        i = 0
+
         while current_time < end_time:
             image = pyautogui.screenshot(region=(self.window.left,
                                                  self.window.top,
@@ -155,25 +191,20 @@ class Recorder:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             self.out.write(frame)
 
-            self.keyboard_out.append([current_time,
-                                      self.keys_pressed, self.keys_released,
-                                      self.mouse_moved, self.mouse_clicked])
-            self.keys_pressed = []
-            self.keys_released = []
-            self.mouse_moved = []
-            self.mouse_clicked = []
+            self.frame_tracking['timestamp'] = (current_time - start_time) * 1000
+            self.frame_tracking['id'] = i
+            self.keyboard_out.append(self.frame_tracking)
 
+            self.initialize_frame_tracking()
             current_time = time.time()
+            i += 1
+
+        self.clean_output()
 
         if os.path.isfile(self.keyboard_outfile):
             os.remove(self.keyboard_outfile)
 
-        with open(self.keyboard_outfile, newline='', mode='a') as csv_out:
-            writer = csv.writer(csv_out, delimiter=',')
-            writer.writerow(self.outfile_headers)
-
-            for k in self.keyboard_out:
-                writer.writerow(k)
+        self.df_out.to_csv(self.keyboard_outfile, header='column+names', index=False)
 
     def quit(self):
         cv2.destroyAllWindows()
