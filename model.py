@@ -5,9 +5,9 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 from keras.utils import np_utils
-from keras.callbacks import ModelCheckpoint
-from keras.models import Model
-from keras.optimizers import Adam
+from keras.constraints import maxnorm
+from keras.models import Sequential
+from keras.optimizers import SGD
 from keras.layers import Conv2D
 from keras.layers.convolutional import MaxPooling2D
 from keras.layers import Flatten
@@ -19,7 +19,6 @@ from keras.layers import BatchNormalization
 TEST_FILE = 'D:/Python Projects/gameBot/recording output/gameplay'
 
 
-# https://stackoverflow.com/questions/7755684/flatten-opencv-numpy-array
 def parse_video():
     video = cv2.VideoCapture(TEST_FILE + ".avi")
     fps = video.get(cv2.CAP_PROP_FPS)
@@ -38,16 +37,16 @@ def parse_video():
         if frame_exists:
             timestamps.append(video.get(cv2.CAP_PROP_POS_MSEC))
             calc_timestamps.append(calc_timestamps[-1] + 1000 / fps)
-
-            current_frame = current_frame.T.flatten()
             frames.append(current_frame)
-
             frame_ids.append(i)
             i += 1
         else:
             run = False
 
     video.release()
+
+    for i, (ts, cts) in enumerate(zip(timestamps, calc_timestamps)):
+        print('Frame %d difference:' % i, abs(ts - cts))
 
     return pd.DataFrame(data={'id': frame_ids,
                               'timestamp': timestamps,
@@ -64,7 +63,7 @@ def build_dataset():
 
 
 def make_default_hidden_layers(data):
-    x = Conv2D(16, (3, 3), padding='same', input_shape=[2, data.shape[1]])(data)
+    x = Conv2D(16, (3, 3), padding='same')(data)
     x = Activation('relu')(x)
     x = BatchNormalization(axis=-1)(x)
     x = MaxPooling2D(pool_size=(3, 3))(x)
@@ -98,39 +97,49 @@ def w_press(data):
 
 # https://www.tutorialspoint.com/tensorflow/image_recognition_using_tensorflow.htm
 # https://towardsdatascience.com/building-a-multi-output-convolutional-neural-network-with-keras-ed24c7bc1178
-# https://www.tensorflow.org/tutorials/images/cnn
 def build_model(data):
     data['mouse_x'] = data['mouse_x'] / data['mouse_x'].max()
     data['mouse_y'] = data['mouse_y'] / data['mouse_y'].max()
 
-    x = data['frame'].to_list()
-    y = data['w_press'].values
-
-    x = np.asarray(x)
+    x = data['frame'].values
+    y = data.drop(columns=['id', 'frame']).values
 
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=1)
+
     y_train = np_utils.to_categorical(y_train)
-    # x_train = np.asarray(x_train).astype('float32')
 
-    w_press_branch = w_press(x_train)
+    num_classes = y_train.shape[1]
 
-    model = Model(inputs=y_train,
-                  outputs=[w_press_branch],
-                  name='tree_farm')
+    model = Sequential()
+    model.add(Conv2D(32, (3, 3),
+                     input_shape=(64, 64, 3),
+                     padding='same',
+                     activation='relu',
+                     kernel_constraint=maxnorm(3)))
 
-    initial_learn_rate = .0004
-    epochs = 100
-    optimizer = Adam(learning_rate=initial_learn_rate, decay=initial_learn_rate / epochs)
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Flatten())
 
-    model.compile(optimizer=optimizer,
-                  loss={'w_press': 'binary_crossentropy'},
-                  loss_weights={'w_press': 0.1},
-                  metrics={'w_press': 'accuracy'})
-    return model
+    model.add(Dense(512,
+                    activation='relu',
+                    kernel_constraint=maxnorm(3)))
+    model.add(Dropout(0.5))
+    model.add(num_classes, activation='softmax')
+
+    epochs = 10
+    learn_rate = 0.01
+    decay = learn_rate / epochs
+    optimizer = SGD(lr=learn_rate, momentum=0.9, decay=decay, nesterov=False)
+    model.complie(loss='categorical_crossentropy',
+                  optimizer=optimizer,
+                  metrics=['accuracy'])
+    print(model.summary())
+
+    model.fit(x_train, y_train, epochs=epochs, batch_size=32, shuffle=True)
+    return True
 
 
 build_model(build_dataset())
 
 # Next
-# 1.) Add training
-# 2.) Figure out shape
+# 1.) Figure out matching timestamps
