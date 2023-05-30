@@ -57,7 +57,7 @@ class Recorder:
     13.) self.df_out: The dataframe we use for transforming the output
     """
 
-    def __init__(self, out_filename, window_name='minecraft', codec='MJPG', fps=30.):
+    def __init__(self, out_filename, window_name='minecraft', codec='MJPG', fps=12.):
         # Initialize the codec we're using
         self.codec = cv2.VideoWriter_fourcc(*'{0}'.format(codec))
 
@@ -164,7 +164,7 @@ class Recorder:
     def clean_output(self):
         self.df_out = pd.DataFrame.from_dict(self.keyboard_out)
         # Remove empty frames
-        self.remove_empty_frames()
+        # self.remove_empty_frames()
         # For each key, track held vs released
         # Make sure positions are right
 
@@ -212,7 +212,7 @@ class Recorder:
 
 
 r = Recorder(TEST_FILE)
-r.run()
+r.run(record_seconds=900)
 r.quit()
 
 # Next comment everything
