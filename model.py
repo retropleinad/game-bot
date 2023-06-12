@@ -1,6 +1,7 @@
 import pandas as pd
 import cv2
 import numpy as np
+import tensorflow as tf
 
 from keras.utils import np_utils
 from keras.callbacks import ModelCheckpoint
@@ -20,7 +21,7 @@ TEST_FILE = 'D:/Python Projects/gameBot/recording output/gameplay'
 BATCH_SIZE = 12
 
 
-class VideoParser:
+class VideoParser(tf.keras.utils.Sequence):
 
     def __init__(self, file_name, train_test_split=0.7):
         self.train_test_split = train_test_split
@@ -29,6 +30,15 @@ class VideoParser:
         self.csv_file_name = file_name + '.csv'
         self.keys_df_headers = pd.read_csv(self.csv_file_name, nrows=1).columns
         self.keys_df = None
+
+    def __getitem__(self, index):
+        pass
+
+    def __len__(self):
+        pass
+
+    def on_epoch_end(self):
+        pass
 
     def parse_video(self, num_frames, start=0):
         self.video.set(cv2.CAP_PROP_POS_FRAMES, start)
@@ -183,9 +193,13 @@ class KeyModel:
         train_parser = VideoParser(TEST_FILE)
         train_idx, validation_idx, test_idx = train_parser.generate_split_indexes()
         train_gen = train_parser.parse_dataset(BATCH_SIZE)
-        train = self.model.fit(train_idx,
-                                         epochs=self.epochs,
-                                         validation_data=validation_idx)
+
+        train_gen_x = train_gen['frame']
+        train_gen_y = train_gen[['w_press', 'w_release']]
+
+        train = self.model.fit(x=train_gen_x,
+                               y=train_gen_y,
+                               epochs=20)
 
 
 # https://www.tutorialspoint.com/tensorflow/image_recognition_using_tensorflow.htm
