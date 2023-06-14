@@ -1,10 +1,10 @@
 import pandas as pd
 import cv2
 import numpy as np
+import tensorflow as tf
 
 from keras.utils import np_utils
 from keras.callbacks import ModelCheckpoint
-from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.layers import Conv2D
@@ -20,17 +20,105 @@ TEST_FILE = 'D:/Python Projects/gameBot/recording output/gameplay'
 BATCH_SIZE = 12
 
 
-class VideoParser:
+# Takes a dataframe and returns a copy of that dataframe with empty frames removed
+def remove_empty_frames(df):
+    df_copy = df.copy()
+    i = 0
+    code = '{0} = {0}['.format('df_copy')
 
-    def __init__(self, file_name, train_test_split=0.7):
-        self.train_test_split = train_test_split
+    for col in df.columns:
+        if col not in ('timestamp', 'id', 'frame'):
+            code += '({0}[\'{1}\'] != 0.0) '.format('df_copy', col)
+            if i == len(df.columns) - 1:
+                code += ']'
+            else:
+                code += '|'
+        i += 1
+
+    exec(code)
+    return df_copy
+
+
+class VideoParser(tf.keras.utils.Sequence):
+
+    """
+    class VideoParser
+
+    """
+
+    def __init__(self,                  # self
+                 file_name,             # Name of the file without extension
+                 y_labels,              # Columns we want to predict
+                 batch_size=12):        # How many frames are in each batch?
+
+        # Use file_name to find the video file and the csv
         self.video = cv2.VideoCapture(file_name + '.avi')
-        self.fps = self.video.get(cv2.CAP_PROP_FPS)
         self.csv_file_name = file_name + '.csv'
-        self.keys_df_headers = pd.read_csv(self.csv_file_name, nrows=1).columns
-        self.keys_df = None
 
-    def parse_video(self, num_frames, start=0):
+        # Load headers and save column names we care about
+        self.keys_df_headers = pd.read_csv(self.csv_file_name, nrows=1).columns
+        self.y_labels = y_labels
+
+        # Save fields related to batches and size of video
+        self.fps = self.video.get(cv2.CAP_PROP_FPS)
+        self.num_frames = int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.batch_size = batch_size
+
+    """
+    __getitem__:
+    Inputs:
+        index: Where in the csv/video file to start the batch
+    Description:
+        Generate one batch of data
+        Required for inheriting tf sequence
+    Returns: (x, y)
+        x will be a numpy array of shape [batch_size, input_height, input_width, input_channel]
+        y will be a tuple with numpy arrays of shape [batch_size, label]
+    """
+    def __getitem__(self, index):
+        # Run parse dataset
+        df = self.__parse_dataset(self.batch_size, start=index, labels=self.y_labels)
+
+        # Preprocess X
+        x = df['frame'].to_list()
+        x = np.asarray(x).astype('uint8')
+        # x = x / 255
+
+        # Preprocess Y
+        y_values = []
+        for y_label in self.y_labels:
+            y_values.append(tf.keras.utils.to_categorical(df[y_label], 2))
+        y_values = tuple(y_values)
+
+        return x, y_values
+
+    """
+    __len__:
+    Description:
+        Required for inheriting tf sequence
+        Must return int
+    Returns:
+        The number of batches the generator can produce
+    """
+    def __len__(self):
+        num_batches = int(self.num_frames // self.batch_size)
+        return num_batches
+
+    """
+    __parse_video:
+    Inputs:
+        num_frames: The number of frames we want to parse
+        start: What frame do we want to start parsing on?
+    Description:
+        Parse frames from the video file
+    Returns:
+        pd DataFrame with two columns: id and frame
+        ID is later used to match with ID in csv
+        Frame is then loaded frame in np array format
+    Called By:
+        __parse_dataset:
+    """
+    def __parse_video(self, num_frames, start=0):
         self.video.set(cv2.CAP_PROP_POS_FRAMES, start)
 
         frames = []
@@ -47,52 +135,51 @@ class VideoParser:
 
         return pd.DataFrame(data={'id': frame_ids, 'frame': frames})
 
-    # Starts at 0 and includes provided start frame
-    def parse_csv(self, num_frames, start=1):
+    """
+    __parse_csv:
+    Inputs:
+        num_frames: The number of frames we want to parse
+        start: What frame do we want to start parsing on?
+        labels: What columns do we want to return? None by default and returns all
+    Description:
+        Parse frames from the csv file
+    Returns:
+        pd DataFrame with id and key press/release columns
+        ID is later used to match with ID from video
+        press/release columns hold data on whether or not a key was pressed/released that frame
+    Called By:
+        __parse_dataset:
+    """
+    def __parse_csv(self, num_frames, start=1, labels=None):
         keyboard_df = pd.read_csv(self.csv_file_name,
                                   skiprows=start, nrows=num_frames,
                                   header=None, names=self.keys_df_headers)
-        return keyboard_df
+        if labels is None:
+            return keyboard_df
 
-    def remove_empty_frames(self, df, df_name):
-        i = 0
-        code = '{0} = {0}['.format(df_name)
-        for col in df.columns:
-            if col not in ('timestamp', 'id', 'frame'):
-                code += '({0}[\'{1}\'] != 0.0) '.format(df_name, col)
-                if i == len(df.columns) - 1:
-                    code += ']'
-                else:
-                    code += '|'
-            i += 1
-        exec(code)
+        cols = ['id']
+        for label in labels:
+            cols.append(label)
+        return keyboard_df[cols]
 
-    # Main issue: Column headers to later rows for df
-    def parse_dataset(self, num_frames, start=0):
-        self.keys_df = self.parse_csv(num_frames, start+1)
-        self.remove_empty_frames(self.keys_df, 'self.keys_df')
-        if self.keys_df.shape[0] != 0:
-            video_df = self.parse_video(num_frames, start)
-            data = self.keys_df.merge(video_df, left_on='id', right_on='id')
+    """
+    
+    """
+    def __parse_dataset(self, num_frames, start=0, labels=None):
+        keys_df = self.__parse_csv(num_frames,
+                                   start * self.batch_size + 1,
+                                   labels)
+        # self.remove_empty_frames(self.keys_df, 'self.keys_df')
+        if keys_df.shape[0] != 0:
+            video_df = self.__parse_video(num_frames,
+                                          start * self.batch_size)
+            data = keys_df.merge(video_df, left_on='id', right_on='id')
             return data
         else:
             return None
 
-    def generate_split_indexes(self):
-        total_frames = cv2.CAP_PROP_FRAME_COUNT
-        permutation = np.random.permutation(total_frames)
-        train_up_to = int(total_frames * self.train_test_split)
-
-        train_idx = permutation[:train_up_to]
-        test_idx = permutation[train_up_to:]
-
-        train_up_to = int(train_up_to * self.train_test_split)
-        train_idx, validation_idx = train_idx[:train_up_to], train_idx[train_up_to:]
-
-        return train_idx, validation_idx, test_idx
-
     def get_total_frames(self):
-        return int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
+        return self.num_frames
 
     def quit(self):
         self.video.release()
@@ -177,15 +264,17 @@ class KeyModel:
                            metrics={'w_press': 'accuracy',
                                     'w_release': 'accuracy'})
         
-# https://pyimagesearch.com/2018/12/24/how-to-use-keras-fit-and-fit_generator-a-hands-on-tutorial/
+    # https://pyimagesearch.com/2018/12/24/how-to-use-keras-fit-and-fit_generator-a-hands-on-tutorial/
+    # Current main problem: expects 1 input but is looking at all 12
     def fit_model(self):
         batch_size = 12
-        train_parser = VideoParser(TEST_FILE)
-        train_idx, validation_idx, test_idx = train_parser.generate_split_indexes()
-        train_gen = train_parser.parse_dataset(BATCH_SIZE)
-        train = self.model.fit(train_idx,
-                                         epochs=self.epochs,
-                                         validation_data=validation_idx)
+
+        train_generator = VideoParser(TEST_FILE, ['w_press', 'w_release'], batch_size=batch_size)
+        test_generator = VideoParser(TEST_FILE, ['w_press', 'w_release'], batch_size=batch_size)
+
+        train = self.model.fit(train_generator,
+                               validation_data=test_generator,
+                               epochs=20)
 
 
 # https://www.tutorialspoint.com/tensorflow/image_recognition_using_tensorflow.htm
@@ -198,12 +287,11 @@ def main():
     shape = [876, 1616, 3]
 
     parser = VideoParser(TEST_FILE)
-    df = parser.parse_dataset(batch_size)
+    df = parser.__parse_dataset(batch_size)
 
     model = KeyModel(shape, .0004, 100)
 
 
-main()
 # Next
 # 1.) Add training
 # 2.) Figure out shape
