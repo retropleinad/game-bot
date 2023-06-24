@@ -2,9 +2,9 @@ import pandas as pd
 import cv2
 import numpy as np
 import tensorflow as tf
+import math
+import random
 
-from keras.utils import np_utils
-from keras.callbacks import ModelCheckpoint
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.layers import Conv2D
@@ -21,49 +21,152 @@ INPUT_AVI = 'D:/Python Projects/gameBot/recording output/gameplay.avi'
 BATCH_SIZE = 12
 
 
+def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True):
+    """
+    Params:
+        train_test_split: Decimal value of what percent of the dataset should be training
+        num_batches: how many batches are we shuffling
+        simple: should we shuffle simply or more algorithmically intensively
+        shuffle: should lists returned be shuffled
+    Description:
+        Function to randomize batches
+        Batches are 0-indexed
+    Returns:
+        dict where ['train'] is a list of indexes for train batches and ['test'] is for test batches
+    Called By:
+        KeyModel._fit_model()
+    """
+
+    # Initialize lists to save batch numbers for train and test batches
+    train_batches = []
+    test_batches = []
+
+    # Create list with each batch
+    # Randomly calculate index and grab batch
+    # Add batch to return list and remove it from list with each batch
+    if not simple:
+        num_train = math.floor(train_test_split * num_batches)
+        batches = [i for i in range(0, num_batches)]
+
+        while len(train_batches) < num_train:
+            r = random.randint(0, len(batches) - 1)
+            train_batches.append(batches[r])
+            batches.remove(batches[r])
+
+        test_batches = batches
+
+    # Alternatively, iterate through each batch and use weighted generator to assign output
+    # Problem: Pseudo-random
+    else:
+        for i in range(0, num_batches):
+            if random.random() <= train_test_split:
+                train_batches.append(i)
+            else:
+                test_batches.append(i)
+
+    # Shuffle where batch number appears in array
+    if shuffle:
+        random.shuffle(train_batches)
+        random.shuffle(test_batches)
+
+    return {'train': train_batches, 'test': test_batches}
+
+
 class VideoParser(tf.keras.utils.Sequence):
 
     """
     class VideoParser
 
+    Description:
+        Data generator object to feed data into the model
+        Parses data from both avi and csv files and transforms data to be ready for neural network
+        Outputs in batches to prevent murdering RAM
+
+    Methods:
+        __init__()
+        __getitem__(self, index)
+        __len__(self)
+        _parse_video(self, num_frames=0, ids=None, start=0)
+        _parse_video_iterative(self, num_frames, start=0)
+        _parse_video_specific(self, ids)
+        _parse_csv(self, num_frames, start=1, labels=None)
+        _normalize_mouse_pos(self, df, x_col_name, y_col_name)
+        _parse_dataset_specific(self, num_frames, start=0, labels=None)
+        get_total_frames(self)
+        quit(self)
     """
 
-    def __init__(self,                  # self
-                 csv_file_name,             # Name of the file without extension
-                 avi_file_name,
-                 processed_avi_file_name,
-                 y_labels,              # Columns we want to predict
-                 batch_size=12):        # How many frames are in each batch?
+    def __init__(self,
+                 processed_csv_address,
+                 initial_avi_address,
+                 processed_avi_address,
+                 y_labels,
+                 mouse_x_max=None,
+                 mouse_y_max=None,
+                 batch_size=12,
+                 batches=None):
+        """
+        Parameters:
+            processed_csv_address: The address of the processed csv file
+            initial_avi_address: The address of the unprocessed avi file
+            processed_avi_address: The address of the processed avi file
+            y_labels: Set the columns that we care about for y
+            mouse_x_max: What is the maximum mouse x position value?
+            mouse_y_max: What is the maximum mouse y position value?
+            batch_size: How big of batches should we use?
+            batches: Directly feed the model the batches to use
+
+        Variables Initialized:
+            self.video: Video file for the initial avi (which here we're working primarily with)
+            self.processed_csv_address: The address of the processed csv file
+            self.keys_df_headers: dataframe of column headers from csv
+            self.y_labels: Save the columns that we care about for y
+            self.fps: Save the fps of the video
+            self.batch_size: Save the batch size
+            self.num_frames: Calculate the number of frames we're working with
+            self.batches: Save the specific batches we're pulling in this generator object
+            self.mouse_x_max: Save the maximum x position for the mouse
+            self.mouse_y_max: Save the maximum y position for the mouse
+        """
 
         # Use file_name to find the video file and the csv
-        self.video = cv2.VideoCapture(avi_file_name)
-        self.csv_file_name = csv_file_name
+        self.video = cv2.VideoCapture(initial_avi_address)
+        self.processed_csv_address = processed_csv_address
 
         # Load headers and save column names we care about
-        self.keys_df_headers = pd.read_csv(self.csv_file_name, nrows=1).columns
+        self.keys_df_headers = pd.read_csv(self.processed_csv_address, nrows=1).columns
         self.y_labels = y_labels
 
         # Save fields related to batches and size of video
         self.fps = self.video.get(cv2.CAP_PROP_FPS)
         self.batch_size = batch_size
-        processed_video = cv2.VideoCapture(processed_avi_file_name)
+        processed_video = cv2.VideoCapture(processed_avi_address)
         self.num_frames = int(processed_video.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.batches = batches
 
-    """
-    __getitem__:
-    Inputs:
-        index: Where in the csv/video file to start the batch
-    Description:
-        Generate one batch of data
-        Required for inheriting tf sequence
-    Returns: (x, y)
-        x will be a numpy array of shape [batch_size, input_height, input_width, input_channel]
-        y will be a tuple with numpy arrays of shape [batch_size, label]
-    """
+        # Save mouse max values
+        self.mouse_x_max = mouse_x_max
+        self.mouse_y_max = mouse_y_max
+
     def __getitem__(self, index):
-        # Run parse dataset
-        df = self.__parse_dataset(self.batch_size, start=index, labels=self.y_labels)
+        """
+        Inputs:
+            index: Where in the csv/video file to start the batch
+        Description:
+            Generate one batch of data
+            Required for inheriting tf sequence
+        Returns: (x, y)
+            x will be a numpy array of shape [batch_size, input_height, input_width, input_channel]
+            y will be a tuple with numpy arrays of shape [batch_size, label]
+        """
 
+        # Run parse dataset
+        if self.batches is None:
+            df = self._parse_dataset_specific(self.batch_size, start=index, labels=self.y_labels)
+        else:
+            df = self._parse_dataset_specific(self.batch_size,
+                                              start=self.batches[index],
+                                              labels=self.y_labels)
         # Preprocess X
         x = df['frame'].to_list()
         x = np.asarray(x).astype('uint8')
@@ -77,47 +180,68 @@ class VideoParser(tf.keras.utils.Sequence):
 
         return x, y_values
 
-    """
-    __len__:
-    Description:
-        Required for inheriting tf sequence
-        Must return int
-    Returns:
-        The number of batches the generator can produce
-    """
     def __len__(self):
+        """
+        Description:
+            Required for inheriting tf sequence
+            Must return int
+        Returns:
+            The number of batches the generator can produce
+        """
+
+        if self.batches is not None:
+            return len(self.batches)
         num_batches = int(self.num_frames // self.batch_size)
         return num_batches
 
-    def __parse_video(self, num_frames=0, ids=None, start=0):
-        if num_frames == 0:
-            return self.__parse_video_specific(ids)
-        return self.__parse_video_iterative(num_frames, start)
+    def _parse_video(self, num_frames=0, ids=None, start=0):
+        """
+        Parameters:
+            num_frames: The number of frames to parse
+            ids: List of ids to parse, overrids num_frames
+            start: ID of frame to start with
+        Description:
+            Parse frames from the avi file
+        Returns:
+            Pandas dataframe of frame id and frame
+        Called By:
+            self.parse_dataset_specific()
+        """
 
-    """
-    __parse_video_iterative:
-    Inputs:
-        num_frames: The number of frames we want to parse
-        start: What frame do we want to start parsing on?
-    Description:
-        Parse frames from the video file
-    Returns:
-        pd DataFrame with two columns: id and frame
-        ID is later used to match with ID in csv
-        Frame is then loaded frame in np array format
-    Called By:
-        __parse_dataset:
-    """
-    def __parse_video_iterative(self, num_frames, start=0):
+        if num_frames == 0:
+            return self._parse_video_specific(ids)
+        return self._parse_video_iterative(num_frames, start)
+
+    def _parse_video_iterative(self, num_frames, start=0):
+        """
+        Parameters:
+            num_frames: The number of frames we want to parse
+            start: What frame do we want to start parsing on?
+        Description:
+            Parse frames from the video file.
+            Starts at a given frame and parses the next n frames
+        Returns:
+            pd DataFrame with two columns: id and frame
+            ID is later used to match with ID in csv
+            Frame is then loaded frame in np array format
+        Called By:
+            _parse_video():
+        """
+
+        # Set video to start frame
         self.video.set(cv2.CAP_PROP_POS_FRAMES, start)
 
+        # Create lists for saving frames and ids
         frames = []
         frame_ids = []
 
+        # Loop through each frame
         i = start
         while i < start + num_frames:
+            # Read the frame
             frame_exists, current_frame = self.video.read()
 
+            # Save the frame and the frame id
             if frame_exists:
                 frames.append(current_frame)
                 frame_ids.append(i)
@@ -125,24 +249,40 @@ class VideoParser(tf.keras.utils.Sequence):
 
         return pd.DataFrame(data={'id': frame_ids, 'frame': frames})
 
-    def __parse_video_specific(self, ids):
-        frames = []
-        frame_ids = []
+    def _parse_video_specific(self, ids):
+        """
+        Parameters:
+            ids:
+        Description:
+            Parse frames from the video file.
+            Parses frames at given ids
+        Returns:
+            pd DataFrame with two columns: id and frame
+            ID is later used to match with ID in csv
+            Frame is then loaded frame in np array format
+        Called By:
+            _parse_video():
+        """
 
+        # Create lists for saved frames
+        frames = []
+
+        # Loop through each id
         for i in ids:
+            # Read the frame
             self.video.set(cv2.CAP_PROP_POS_FRAMES, int(i))
             frame_exists, current_frame = self.video.read()
 
+            # Save the frame
             if frame_exists:
                 frames.append(current_frame)
-                frame_ids.append(i)
 
-        print('frame ids: ', frame_ids)
-        return pd.DataFrame(data={'id': frame_ids, 'frame': frames})
+        # print('frame ids: ', frame_ids)
+        return pd.DataFrame(data={'id': ids, 'frame': frames})
 
 
     """
-    __parse_csv:
+    _parse_csv:
     Inputs:
         num_frames: The number of frames we want to parse
         start: What frame do we want to start parsing on?
@@ -154,10 +294,10 @@ class VideoParser(tf.keras.utils.Sequence):
         ID is later used to match with ID from video
         press/release columns hold data on whether or not a key was pressed/released that frame
     Called By:
-        __parse_dataset:
+        _parse_dataset_specific:
     """
-    def __parse_csv(self, num_frames, start=1, labels=None):
-        keyboard_df = pd.read_csv(self.csv_file_name,
+    def _parse_csv(self, num_frames, start=1, labels=None):
+        keyboard_df = pd.read_csv(self.processed_csv_address,
                                   skiprows=start, nrows=num_frames,
                                   header=None, names=self.keys_df_headers)
         if labels is None:
@@ -167,19 +307,26 @@ class VideoParser(tf.keras.utils.Sequence):
         for label in labels:
             cols.append(label)
 
-        print('csv ids: ', keyboard_df['id'].to_list())
+        keyboard_df = self._normalize_mouse_pos(keyboard_df, 'mouse_x', 'mouse_y')
+        # print('csv ids: ', keyboard_df['id'].to_list())
         return keyboard_df[cols]
 
+    def _normalize_mouse_pos(self, df, x_col_name, y_col_name):
+        if self.mouse_x_max is not None:
+            df['mouse_x_normalized'] = df[x_col_name] / self.mouse_x_max
+        if self.mouse_y_max is not None:
+            df['mouse_y_normalized'] = df[y_col_name] / self.mouse_y_max
+        return df
     """
     
     """
-    def __parse_dataset(self, num_frames, start=0, labels=None):
-        keys_df = self.__parse_csv(num_frames,
-                                   start * self.batch_size + 1,
-                                   labels)
+    def _parse_dataset_specific(self, num_frames, start=0, labels=None):
+        keys_df = self._parse_csv(num_frames,
+                                  start * self.batch_size + 1,
+                                  labels)
         ids = keys_df['id'].to_list()
         if keys_df.shape[0] != 0:
-            video_df = self.__parse_video(ids=ids)
+            video_df = self._parse_video(ids=ids)
             data = keys_df.merge(video_df, left_on='id', right_on='id')
             return data
         else:
@@ -190,11 +337,19 @@ class VideoParser(tf.keras.utils.Sequence):
 
     def quit(self):
         self.video.release()
+        return True
 
 
 class KeyModel:
 
-    def __init__(self, input_shape, initial_learn_rate=.004, epochs=20, batch_size=12, keys=('w_press', 'w_release')):
+    def __init__(self,
+                 input_shape,
+                 initial_learn_rate=.004,
+                 epochs=20,
+                 batch_size=12,
+                 keys=('w_press', 'w_release'),
+                 mouse=False):
+
         # [BATCH_SIZE, 876, 1616, 3]
         self.input_shape = input_shape
         self.initial_learn_rate = initial_learn_rate
@@ -202,12 +357,16 @@ class KeyModel:
         self.batch_size = batch_size
         self.keys = keys
         self.model = None
+        self.mouse = mouse
 
-        self.assemble_model()
-        self.compile_model()
-        self.fit_model()
+        self._assemble_model()
+        self._compile_model()
+        self._fit_model()
 
-    def make_default_hidden_layers(self, data):
+    """
+    
+    """
+    def _make_default_hidden_layers(self, data):
         # 2D Convolutional layer: good for pictures
         # filters: The number of output filters in the convolution
         # kernel_size: The height and width of the 2D convolution window
@@ -252,8 +411,8 @@ class KeyModel:
         x = Dropout(0.25)(x)
         return x
 
-    def add_key_branch(self, data, key_name):
-        x = self.make_default_hidden_layers(data)
+    def _add_key_branch(self, data, key_name):
+        x = self._make_default_hidden_layers(data)
 
         # Flattens the input
         x = Flatten()(x)
@@ -285,19 +444,56 @@ class KeyModel:
         x = Activation('sigmoid', name=key_name)(x)
         return x
 
-    def assemble_model(self):
+    # Screen width:
+    # Be sure to make sure everything is positive
+    # I think we can assume min value is 0
+    # width = 1616, height = 876
+    def _build_mouse_branch(self, data, mouse_axis):
+        x = self._make_default_hidden_layers(data)
+
+        # Flattens the input
+        x = Flatten()(x)
+
+        # A layer in which every neuron from the previous layer is connected to every neuron of the next layer
+        # units: Dimensionality of the output space (number of neurons)
+        x = Dense(128)(x)
+
+        # ReLu: 0 if x < 0, otherwise x=y
+        x = Activation('relu')(x)
+
+        # Normalizes inputs
+        # Keeps the mean output close to 0 and the output stdev close to 1
+        # During training (when using fit()), normalizes using mean/stdev from current batch
+        # During inference (when using predict()), normalizes output using moving average of mean/stdev
+        # axis: The axis that should be normalized
+        x = BatchNormalization()(x)
+
+        # Randomly sets input units to 0
+        # This is only true during training
+        # rate: float between 0 and 1 that specifies the fraction of the input units to drop
+        x = Dropout(0.5)(x)
+
+        # A layer in which every neuron from the previous layer is connected to every neuron of the next layer
+        # units: Dimensionality of the output space (number of neurons)
+        x = Dense(1)(x)
+
+        # Activation function: returns x = y
+        x = Activation('linear', name=mouse_axis)(x)
+        return x
+
+    def _assemble_model(self):
         inputs = Input(shape=self.input_shape)
 
         branches = []
         for key in self.keys:
-            branch = self.add_key_branch(inputs, key)
+            branch = self._add_key_branch(inputs, key)
             branches.append(branch)
 
         self.model = Model(inputs=inputs,
                            outputs=branches,
                            name='tree_farm')
 
-    def compile_model(self):
+    def _compile_model(self):
         optimizer = Adam(learning_rate=self.initial_learn_rate,
                          decay=self.initial_learn_rate / self.epochs)
 
@@ -317,16 +513,26 @@ class KeyModel:
         
     # https://pyimagesearch.com/2018/12/24/how-to-use-keras-fit-and-fit_generator-a-hands-on-tutorial/
     # Current main problem: expects 1 input but is looking at all 12
-    def fit_model(self):
+    def _fit_model(self):
+        video = cv2.VideoCapture('D:/Python Projects/gameBot/processed output/gameplay.avi')
+        num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+        num_batches = int(num_frames // self.batch_size)
+        batches = shuffle_batches(.7, num_batches)
+
         train_generator = VideoParser(INPUT_CSV, INPUT_AVI,
                                       'D:/Python Projects/gameBot/processed output/gameplay.avi',
-                                      self.keys, batch_size=self.batch_size)
-        test_generator = VideoParser(INPUT_CSV, INPUT_AVI, 'D:/Python Projects/gameBot/processed output/gameplay.avi',
-                                     self.keys, batch_size=self.batch_size)
+                                      self.keys, batch_size=self.batch_size, batches=batches['train'],
+                                      mouse_x_max=1616, mouse_y_max=876)
+        test_generator = VideoParser(INPUT_CSV, INPUT_AVI,
+                                     'D:/Python Projects/gameBot/processed output/gameplay.avi',
+                                     self.keys, batch_size=self.batch_size, batches=batches['test'],
+                                     mouse_x_max=1616, mouse_y_max=876)
 
-        train = self.model.fit(train_generator,
-                               validation_data=test_generator,
-                               epochs=20)
+        self.model.fit(train_generator, validation_data=test_generator, epochs=5)
+        self.model.save('D:/Python Projects/gameBot/models/tree_farm')
+
+    def build_model(self):
+        pass
 
 
 # https://www.tutorialspoint.com/tensorflow/image_recognition_using_tensorflow.htm

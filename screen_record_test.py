@@ -26,6 +26,6 @@ while run:
     if saved_key == 'esc':
         run = False
     if saved_key == 'f8':
-        key_control.press('w')
+        key_control.press('a')
     if saved_key == 'f7':
-        key_control.release('w')
+        key_control.release('a')
