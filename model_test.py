@@ -56,11 +56,11 @@ def data_generator_test():
     initial_x, initial_y = train_generator[0]
     for i in range(i, train_generator.__len__()):
         x, y = train_generator[i]
-        # print(y[0])
+        print(len(y))
 
 
 def key_model_test():
-    km = KeyModel([876, 1616, 3], .004, 20, 3, keys=('w_press', 'w_release', 'a_press', 'a_release'))
+    km = KeyModel([876, 1616, 3], .004, 20, 3, keys=('w_press', 'w_release', 'a_press', 'a_release'), mouse=True)
 
 
 def shuffle_batches_test():

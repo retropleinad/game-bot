@@ -176,8 +176,13 @@ class VideoParser(tf.keras.utils.Sequence):
         y_values = []
         for y_label in self.y_labels:
             y_values.append(tf.keras.utils.to_categorical(df[y_label], 2))
-        y_values = tuple(y_values)
 
+        if self.mouse_x_max is not None:
+            y_values.append(df['mouse_x_normalized'].astype('float16').to_numpy())
+        if self.mouse_y_max is not None:
+            y_values.append(df['mouse_y_normalized'].astype('float16').to_numpy())
+
+        y_values = tuple(y_values)
         return x, y_values
 
     def __len__(self):
@@ -280,23 +285,24 @@ class VideoParser(tf.keras.utils.Sequence):
         # print('frame ids: ', frame_ids)
         return pd.DataFrame(data={'id': ids, 'frame': frames})
 
-
     """
     _parse_csv:
     Inputs:
-        num_frames: The number of frames we want to parse
-        start: What frame do we want to start parsing on?
-        labels: What columns do we want to return? None by default and returns all
-    Description:
-        Parse frames from the csv file
-    Returns:
-        pd DataFrame with id and key press/release columns
-        ID is later used to match with ID from video
-        press/release columns hold data on whether or not a key was pressed/released that frame
-    Called By:
-        _parse_dataset_specific:
+           num_frames: The number of frames we want to parse
+           start: What frame do we want to start parsing on?
+           labels: What columns do we want to return? None by default and returns all
+        Description:
+            Parse frames from the csv file
+        Returns:
+            pd DataFrame with id and key press/release columns
+            ID is later used to match with ID from video
+            press/release columns hold data on whether or not a key was pressed/released that frame
+        Called By:
+            _parse_dataset_specific:
     """
+
     def _parse_csv(self, num_frames, start=1, labels=None):
+
         keyboard_df = pd.read_csv(self.processed_csv_address,
                                   skiprows=start, nrows=num_frames,
                                   header=None, names=self.keys_df_headers)
@@ -308,7 +314,12 @@ class VideoParser(tf.keras.utils.Sequence):
             cols.append(label)
 
         keyboard_df = self._normalize_mouse_pos(keyboard_df, 'mouse_x', 'mouse_y')
-        # print('csv ids: ', keyboard_df['id'].to_list())
+
+        if self.mouse_x_max is not None:
+            cols.append('mouse_x_normalized')
+        if self.mouse_y_max is not None:
+            cols.append('mouse_y_normalized')
+
         return keyboard_df[cols]
 
     def _normalize_mouse_pos(self, df, x_col_name, y_col_name):
@@ -448,7 +459,7 @@ class KeyModel:
     # Be sure to make sure everything is positive
     # I think we can assume min value is 0
     # width = 1616, height = 876
-    def _build_mouse_branch(self, data, mouse_axis):
+    def _add_mouse_branch(self, data, mouse_axis):
         x = self._make_default_hidden_layers(data)
 
         # Flattens the input
@@ -489,6 +500,10 @@ class KeyModel:
             branch = self._add_key_branch(inputs, key)
             branches.append(branch)
 
+        if self.mouse:
+            branches.append(self._add_mouse_branch(inputs, 'mouse_x_normalized'))
+            branches.append(self._add_mouse_branch(inputs, 'mouse_y_normalized'))
+
         self.model = Model(inputs=inputs,
                            outputs=branches,
                            name='tree_farm')
@@ -506,6 +521,15 @@ class KeyModel:
             loss_weights[key] = 0.1
             metrics[key] = 'accuracy'
 
+        if self.mouse:
+            loss['mouse_x_normalized'] = 'mse'
+            loss_weights['mouse_x_normalized'] = 4.
+            metrics['mouse_x_normalized'] = 'mae'
+
+            loss['mouse_y_normalized'] = 'mse'
+            loss_weights['mouse_y_normalized'] = 4.
+            metrics['mouse_y_normalized'] = 'mae'
+
         self.model.compile(optimizer=optimizer,
                            loss=loss,
                            loss_weights=loss_weights,
@@ -519,14 +543,23 @@ class KeyModel:
         num_batches = int(num_frames // self.batch_size)
         batches = shuffle_batches(.7, num_batches)
 
+        if self.mouse:
+            mouse_x_max = 1616
+            mouse_y_max = 876
+        else:
+            mouse_x_max = None
+            mouse_y_max = None
+
         train_generator = VideoParser(INPUT_CSV, INPUT_AVI,
                                       'D:/Python Projects/gameBot/processed output/gameplay.avi',
                                       self.keys, batch_size=self.batch_size, batches=batches['train'],
-                                      mouse_x_max=1616, mouse_y_max=876)
+                                      mouse_x_max=mouse_x_max,
+                                      mouse_y_max=mouse_y_max)
         test_generator = VideoParser(INPUT_CSV, INPUT_AVI,
                                      'D:/Python Projects/gameBot/processed output/gameplay.avi',
                                      self.keys, batch_size=self.batch_size, batches=batches['test'],
-                                     mouse_x_max=1616, mouse_y_max=876)
+                                     mouse_x_max=mouse_x_max,
+                                     mouse_y_max=mouse_y_max)
 
         self.model.fit(train_generator, validation_data=test_generator, epochs=5)
         self.model.save('D:/Python Projects/gameBot/models/tree_farm')
