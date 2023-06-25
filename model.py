@@ -73,7 +73,6 @@ def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True):
 
 
 class VideoParser(tf.keras.utils.Sequence):
-
     """
     class VideoParser
 
@@ -397,8 +396,9 @@ class KeyModel:
         self._fit_model()
 
     """
-    
+
     """
+
     def _make_default_hidden_layers(self, data):
         # 2D Convolutional layer: good for pictures
         # filters: The number of output filters in the convolution
@@ -556,7 +556,7 @@ class KeyModel:
                            loss=loss,
                            loss_weights=loss_weights,
                            metrics=metrics)
-        
+
     # https://pyimagesearch.com/2018/12/24/how-to-use-keras-fit-and-fit_generator-a-hands-on-tutorial/
     # Current main problem: expects 1 input but is looking at all 12
     def _fit_model(self):

@@ -14,9 +14,6 @@ from pynput import keyboard
 from pynput import mouse
 
 
-TEST_FILE = 'D:/Python Projects/gameBot/recording output/gameplay'
-
-
 class Recorder:
 
     """
@@ -36,7 +33,7 @@ class Recorder:
         quit(self):
     """
 
-    def __init__(self, out_filename, window_name='minecraft', codec='MJPG', fps=12.):
+    def __init__(self, out_filename, keys, window_name='minecraft', codec='MJPG', fps=12.):
         """
         Parameters
             out_filename: The name of the file for the output file. This will be the same for video and csv
@@ -70,6 +67,7 @@ class Recorder:
 
         # Initialize lists used for tracking mouse and keyboard
         self.frame_tracking = dict()
+        self.keys = keys
         self._initialize_frame_tracking()
 
         # Initialize variables needed for creating the outfile
@@ -95,11 +93,7 @@ class Recorder:
             'mouse_y': 0.
         }
 
-        keys = ('1', '2', '3', '4', '5', '6', '7', '8', '9',
-                'space', 'w', 'a', 's', 'd', 'shift',
-                'lmouse', 'rmouse')
-
-        for key in keys:
+        for key in self.keys:
             self.frame_tracking[key + '_press'] = 0.
             self.frame_tracking[key + '_release'] = 0.
 
@@ -230,12 +224,3 @@ class Recorder:
         """
         cv2.destroyAllWindows()
         self.out.release()
-
-
-def main():
-    r = Recorder(TEST_FILE)
-    r.run(record_seconds=15)
-    r.quit()
-
-
-# main()

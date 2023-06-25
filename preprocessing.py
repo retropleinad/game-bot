@@ -1,6 +1,7 @@
 import cv2
 import pandas as pd
 import numpy as np
+import json
 
 
 class EmptyFrameRemover:
@@ -65,11 +66,12 @@ class EmptyFrameRemover:
         return self.df_remove_empty_frames
 
 
-def _remove_empty_frames_csv(input_csv_address, output_csv_address, search_cols=None):
+def _remove_empty_frames_csv(input_csv_address, output_csv_address, json_address, search_cols=None):
     """
     Parameters:
         input_csv_address: the address of the csv we're cleaning
         output_csv_address: the address of the csv we're outputting cleaned data
+        json_address: the address of the json save file (we update it for total length)
         search_cols: Columns to search if they're empty. If none, search all.
     Description:
         Takes a csv and removes rows where target columns have a value of 0
@@ -118,6 +120,12 @@ def _remove_empty_frames_csv(input_csv_address, output_csv_address, search_cols=
                                   nrows=1000,
                                   header=None,
                                   names=csv_header_cols)
+
+    # Output number of remaining frames to json
+    save_data = json.load(open(json_address))
+    save_data['processed_total_frames'] = len(ids)
+    json.dump(save_data, json_address)
+
     # Return ids of rows that we kept
     return ids
 
@@ -167,8 +175,9 @@ def _remove_empty_frames_video(input_avi_address, output_avi_address, frame_ids)
     return True
 
 
-def remove_empty_frames(input_csv_address, output_csv_address,
-                        input_avi_address, output_avi_address,
+def remove_empty_frames(json_save_address,
+                        input_csv_address=None, output_csv_address=None,
+                        input_avi_address=None, output_avi_address=None,
                         search_cols=None):
     """
     Parameters:
@@ -182,6 +191,29 @@ def remove_empty_frames(input_csv_address, output_csv_address,
     Returns:
         True to indicate successful run
     """
+
+    # Load json save to dict
+    json_save = json.load(json_save_address)
+
+    if input_csv_address is None:
+        input_csv = json_save['recorded_csv_address']
+    else:
+        input_csv = input_csv_address
+
+    if output_csv_address is None:
+        output_csv = json_save['processed_csv_address']
+    else:
+        output_csv = output_csv_address
+
+    if input_avi_address is None:
+        input_avi = json_save['recorded_avi_address']
+    else:
+        input_avi = input_avi_address
+
+    if output_avi_address is None:
+        output_avi = json_save['processed_avi_address']
+    else:
+        output_avi = output_avi_address
 
     # Process the csv and save good frame ids
     ids = _remove_empty_frames_csv(input_csv_address, output_csv_address, search_cols)
