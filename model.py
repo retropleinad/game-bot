@@ -285,12 +285,12 @@ class VideoParser(tf.keras.utils.Sequence):
         # print('frame ids: ', frame_ids)
         return pd.DataFrame(data={'id': ids, 'frame': frames})
 
-    """
-    _parse_csv:
-    Inputs:
-           num_frames: The number of frames we want to parse
-           start: What frame do we want to start parsing on?
-           labels: What columns do we want to return? None by default and returns all
+    def _parse_csv(self, num_frames, labels, start=1):
+        """
+        Inputs:
+            num_frames: The number of frames we want to parse
+            start: What frame do we want to start parsing on?
+            labels: What columns do we want to return? None by default and returns all
         Description:
             Parse frames from the csv file
         Returns:
@@ -298,40 +298,62 @@ class VideoParser(tf.keras.utils.Sequence):
             ID is later used to match with ID from video
             press/release columns hold data on whether or not a key was pressed/released that frame
         Called By:
-            _parse_dataset_specific:
-    """
+            self._parse_dataset_specific():
+        """
 
-    def _parse_csv(self, num_frames, start=1, labels=None):
-
+        # Read the csv to a df
         keyboard_df = pd.read_csv(self.processed_csv_address,
                                   skiprows=start, nrows=num_frames,
                                   header=None, names=self.keys_df_headers)
-        if labels is None:
-            return keyboard_df
 
+        # Add each label to list
         cols = ['id']
         for label in labels:
             cols.append(label)
 
-        keyboard_df = self._normalize_mouse_pos(keyboard_df, 'mouse_x', 'mouse_y')
+        # Normalize mouse positions
+        if self.mouse_x_max is not None or self.mouse_y_max is not None:
+            keyboard_df = self._normalize_mouse_pos(keyboard_df, 'mouse_x', 'mouse_y')
 
+        # Add normalized mouse columns to list of cols we care about
         if self.mouse_x_max is not None:
             cols.append('mouse_x_normalized')
         if self.mouse_y_max is not None:
             cols.append('mouse_y_normalized')
 
+        # Return only columns we're using
         return keyboard_df[cols]
 
     def _normalize_mouse_pos(self, df, x_col_name, y_col_name):
+        """
+        Inputs:
+            df: The dataframe that contains mouse positions
+            x_col_name: The name of the column with mouse x positions
+            y_col_name: The name of the column with mouse y positions
+        Description:
+            Normalizes mouse positions
+            Divides by max mouse x or y value for given axis to get value between 0-1
+        Returns:
+            dataframe with normalized mouse position columns appended
+        Called By:
+            self._parse_csv():
+        """
+
+        # Divide each mouse axis by max x or y value, respectively
         if self.mouse_x_max is not None:
             df['mouse_x_normalized'] = df[x_col_name] / self.mouse_x_max
         if self.mouse_y_max is not None:
             df['mouse_y_normalized'] = df[y_col_name] / self.mouse_y_max
         return df
-    """
-    
-    """
-    def _parse_dataset_specific(self, num_frames, start=0, labels=None):
+
+    def _parse_dataset_specific(self, num_frames, labels, start=0):
+        """
+        Inputs:
+        Description:
+        Returns:
+        Called By:
+        """
+
         keys_df = self._parse_csv(num_frames,
                                   start * self.batch_size + 1,
                                   labels)
