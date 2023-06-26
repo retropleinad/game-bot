@@ -347,32 +347,77 @@ class VideoParser(tf.keras.utils.Sequence):
 
     def _parse_dataset_specific(self, num_frames, labels, start=0):
         """
-        Inputs:
+        Parameters:
+            num_frames: How many frames should we parse?
+            labels: What y-values do we want to parse from the csv?
+            start: What frame should we start parsing at?
         Description:
+            Calls methods to parse data from the csv and from the video
+            Then merges data into one pandas df
         Returns:
+            pandas df of merged dataset
         Called By:
+            __getitem__()
         """
 
+        # Parse data from the csv
         keys_df = self._parse_csv(num_frames,
                                   start * self.batch_size + 1,
                                   labels)
+
+        # Get the ids of the frames from csv so that we can pull them from avi
         ids = keys_df['id'].to_list()
+
         if keys_df.shape[0] != 0:
+            # Parse data from the avi
             video_df = self._parse_video(ids=ids)
+
+            # Merge and return the data
             data = keys_df.merge(video_df, left_on='id', right_on='id')
             return data
         else:
             return None
 
     def get_total_frames(self):
+        """
+        Description
+            Getter to retrieve total number of frames
+        Returns
+            Total number of frames
+        """
         return self.num_frames
 
     def quit(self):
+        """
+        Description
+            Call after parsing video
+            Cleans up cv2 data from memory
+        Returns
+            True to indicate a successful call
+        """
         self.video.release()
         return True
 
 
 class KeyModel:
+
+    """
+    class KeyModel:
+
+    Description:
+        Our model class
+        Builds the model
+
+    Methods:
+        __init__()
+        _make_default_hidden_layers(self, data)
+        _add_key_branch(self, data, key_name)
+        _add_mouse_branch(self, data, mouse_axis)
+        _assemble_model(self)
+        _compile_model(self)
+        _fit_model(self)
+        build_model(self)
+    """
 
     def __init__(self,
                  input_shape,
@@ -382,7 +427,27 @@ class KeyModel:
                  keys=('w_press', 'w_release'),
                  mouse=False):
 
+        """
+        Parameters
+            input_shape: ndarray dimensions for the model
+            initial_learn_rate: model initial learn rate
+            epochs: How many epochs should we train the model?
+            batch_size: How big should each training/testing batch be?
+            keys: What keys are we trying to predict?
+            mouse: Are we also trying to predict mouse position?
+
+        Variables Initialized
+            self.input_shape: ndarray dimensions for the model
+            self.initial_learn_Rate: model initial learn rate
+            self.epochs: How many epochs should we train the model?
+            self.batch_size: How big should each training/testing batch be?
+            self.keys: What key press/release are we trying to predict?
+            self.model: The tensorflow model that we're building
+            self.mouse: Boolean are we trying to predict mouse position
+        """
+
         # [BATCH_SIZE, 876, 1616, 3]
+        # Initialize variables
         self.input_shape = input_shape
         self.initial_learn_rate = initial_learn_rate
         self.epochs = epochs
@@ -391,15 +456,25 @@ class KeyModel:
         self.model = None
         self.mouse = mouse
 
+        # Build the model
         self._assemble_model()
         self._compile_model()
         self._fit_model()
 
-    """
-
-    """
-
     def _make_default_hidden_layers(self, data):
+        """
+        Parameters
+            data: Input object of shape self.input_shape
+        Description:
+            Builds neural network initial hidden layers
+            These layers are kind and gentle preprocessing type layers before we later add dense layers
+        Returns
+            Generated layers
+        Called By
+            self._add_key_branch()
+            self.add_mouse_branch
+        """
+
         # 2D Convolutional layer: good for pictures
         # filters: The number of output filters in the convolution
         # kernel_size: The height and width of the 2D convolution window
@@ -445,6 +520,20 @@ class KeyModel:
         return x
 
     def _add_key_branch(self, data, key_name):
+        """
+        Parameters
+            data: Input object of shape self.input_shape
+            key_name: The name of the key column for this y variable (example w_press or w_release)
+        Description
+            Adds a branch to the neural network to predict pressing/releasing a particular key.
+            Note that key press and key release should be separate branches
+        Returns
+            Neural network branch
+        Called By
+            self._assemble_model()
+        """
+
+        # Build initial preprocessing type layers
         x = self._make_default_hidden_layers(data)
 
         # Flattens the input
@@ -482,6 +571,20 @@ class KeyModel:
     # I think we can assume min value is 0
     # width = 1616, height = 876
     def _add_mouse_branch(self, data, mouse_axis):
+        """
+        Parameters
+            data: Input object of shape self.input_shape
+            mouse_axis: The name of the key column for this y variable (example mouse_x or mouse_y)
+        Description
+            Adds a branch to the neural network to predict mouse position along the x or y axis.
+            Note that x and y axes should happen in separate branches.
+        Returns
+            Neural network branch
+        Called By
+            self._assemble_model()
+        """
+
+        # Build initial preprocessing layers to NN
         x = self._make_default_hidden_layers(data)
 
         # Flattens the input
@@ -515,34 +618,63 @@ class KeyModel:
         return x
 
     def _assemble_model(self):
+        """
+        Description:
+            Assemble the model.
+            This method pieces together all key and mouse branches for the model.
+            Defines self.model.
+            Does not compile or fit the model.
+        Called By:
+            self.__init__() (for now)
+            self.build_model() (after updates)
+        """
+
+        # Create Input object that we feed to methods to build NN
         inputs = Input(shape=self.input_shape)
 
+        # Build branches for each key press/release
         branches = []
         for key in self.keys:
             branch = self._add_key_branch(inputs, key)
             branches.append(branch)
 
+        # Build branches for mouse position if we're predicting those
         if self.mouse:
             branches.append(self._add_mouse_branch(inputs, 'mouse_x_normalized'))
             branches.append(self._add_mouse_branch(inputs, 'mouse_y_normalized'))
 
+        # Define the model object
         self.model = Model(inputs=inputs,
                            outputs=branches,
                            name='tree_farm')
 
     def _compile_model(self):
+        """
+        Description:
+            Compile the model.
+            This method generates optimizer, loss functions, and applies loss weights and accuracy.
+            Then compiles self.model.
+        Called By:
+            self.__init__() (for now)
+            self.build_model() (after updates)
+        """
+
+        # Build the optimizer for the NN
         optimizer = Adam(learning_rate=self.initial_learn_rate,
                          decay=self.initial_learn_rate / self.epochs)
 
+        # Create dicts to assign loss, loss_weights, and metrics
         loss = {}
         loss_weights = {}
         metrics = {}
 
+        # Populate the dicts for key press
         for key in self.keys:
             loss[key] = 'binary_crossentropy'
             loss_weights[key] = 0.1
             metrics[key] = 'accuracy'
 
+        # Populate the dicts if we're calculating mouse position
         if self.mouse:
             loss['mouse_x_normalized'] = 'mse'
             loss_weights['mouse_x_normalized'] = 4.
@@ -552,19 +684,33 @@ class KeyModel:
             loss_weights['mouse_y_normalized'] = 4.
             metrics['mouse_y_normalized'] = 'mae'
 
+        # Compile the model
         self.model.compile(optimizer=optimizer,
                            loss=loss,
                            loss_weights=loss_weights,
                            metrics=metrics)
 
     # https://pyimagesearch.com/2018/12/24/how-to-use-keras-fit-and-fit_generator-a-hands-on-tutorial/
-    # Current main problem: expects 1 input but is looking at all 12
     def _fit_model(self):
+        """
+        Description:
+            Still very hard-coded, needs to be changed.
+            Calculates variables related to fitting the model.
+            Then fits the model.
+        Called By:
+            self.__init__() (for now)
+            self.build_model() (after updates)
+        """
+
+        # Grab the number of frames and number of batches from the cv2 object
         video = cv2.VideoCapture('D:/Python Projects/gameBot/processed output/gameplay.avi')
         num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
         num_batches = int(num_frames // self.batch_size)
+
+        # Shuffle batch numbers for randomness in order and what we feed into train/test generators
         batches = shuffle_batches(.7, num_batches)
 
+        # Assign mouse_x_max and mouse_y_max
         if self.mouse:
             mouse_x_max = 1616
             mouse_y_max = 876
@@ -572,6 +718,8 @@ class KeyModel:
             mouse_x_max = None
             mouse_y_max = None
 
+        # Build train and test generators
+        # The key difference between the two is setting batches equal to batches['train] or batches['test]
         train_generator = VideoParser(INPUT_CSV, INPUT_AVI,
                                       'D:/Python Projects/gameBot/processed output/gameplay.avi',
                                       self.keys, batch_size=self.batch_size, batches=batches['train'],
@@ -583,7 +731,9 @@ class KeyModel:
                                      mouse_x_max=mouse_x_max,
                                      mouse_y_max=mouse_y_max)
 
+        # Fit the model (this likely will take a while)
         self.model.fit(train_generator, validation_data=test_generator, epochs=5)
+        # Save the model
         self.model.save('D:/Python Projects/gameBot/models/tree_farm')
 
     def build_model(self):
