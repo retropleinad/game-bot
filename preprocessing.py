@@ -16,6 +16,7 @@ class EmptyFrameRemover:
         df_remove_empty_frames(self, df)
         _remove_empty_frames_csv(self, output_csv_address, json_address, search_cols=None)
         _remove_empty_frames_video(self, output_avi_address, frame_ids)
+        _save_json(self):
         remove_empty_frames(self, output_csv_address=None, output_avi_address=None, search_cols=None):
     """
 
@@ -24,13 +25,13 @@ class EmptyFrameRemover:
         Parameters:
             json_address: The address of the json save file
         Variables Initialized:
-            self.df_remove_empty_frames: df used for removing empty frames,
+            self.df_cleaned: df used for removing empty frames,
                 must be a class variable due to how dynamic python works.
             self.json_save_data: dict object of loaded json
             self.json_address: saves the address of the json
         """
-        self.df_remove_empty_frames = None
-        self.json_save_data = json.load(open(json_address))
+        self.df_cleaned = None
+        self.json_save_data = json.load(open(json_address, 'r'))
         self.json_address = json_address
 
     def df_remove_empty_frames(self, df, search_cols=None):
@@ -48,16 +49,16 @@ class EmptyFrameRemover:
         """
 
         # Get dataframe and initial part of dynamic python string ready
-        self.df_remove_empty_frames = df.copy()
+        self.df_cleaned = df.copy()
         i = 0
-        code = '{0} = {0}['.format('self.df_remove_empty_frames')
+        code = '{0} = {0}['.format('self.df_cleaned')
 
         # If search_cols is None, go with default, otherwise loop through specific cols
         if search_cols is None:
             # Loop through every column and append string to check if each column is empty
             for col in df.columns:
                 if col not in ('timestamp', 'id', 'frame', 'mouse_x', 'mouse_y'):
-                    code += '({0}[\'{1}\'] != 0.0) '.format('self.df_remove_empty_frames', col)
+                    code += '({0}[\'{1}\'] != 0.0) '.format('self.df_cleaned', col)
                     if i == len(df.columns) - 1:
                         code += ']'
                     else:
@@ -66,7 +67,7 @@ class EmptyFrameRemover:
         else:
             # Loop through specific columns and append string to see if columns are empty
             for col in search_cols:
-                code += '({0}[\'{1}\'] != 0.0) '.format('self.df_remove_empty_frames', col)
+                code += '({0}[\'{1}\'] != 0.0) '.format('self.df_cleaned', col)
                 if i == len(df.columns) - 1:
                     code += ']'
                 else:
@@ -75,7 +76,7 @@ class EmptyFrameRemover:
 
         # Execute the python string and return altered dataframe
         exec(code)
-        return self.df_remove_empty_frames
+        return self.df_cleaned
 
     def _remove_empty_frames_csv(self, output_csv_address, search_cols=None):
         """
@@ -185,10 +186,10 @@ class EmptyFrameRemover:
         Returns:
             True to indicate a successful call
         """
-        json.dump(self.json_save_data, self.json_address)
+        json.dump(self.json_save_data, open(self.json_address, 'w'))
         return True
 
-    def remove_empty_frames(self, output_csv_address=None, output_avi_address=None, search_cols=None):
+    def remove_empty_frames(self, output_csv_address, output_avi_address, search_cols=None):
         """
         Parameters:
             output_csv_address: The address of the csv we're outputting cleaned data

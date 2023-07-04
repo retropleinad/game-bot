@@ -9,6 +9,7 @@ import pygetwindow as gw
 import time
 import os
 import pandas as pd
+import json
 
 from pynput import keyboard
 from pynput import mouse
@@ -29,14 +30,16 @@ class Recorder:
         on_move(self, x, y):
         on_click(self, x, y, button, pressed):
         _clean_output(self):
+        _build_json(self, json_filename):
         run(self, record_seconds=10):
         quit(self):
     """
 
-    def __init__(self, out_filename, keys, window_name='minecraft', codec='MJPG', fps=12.):
+    def __init__(self, output_csv_address, output_avi_address, keys, window_name='minecraft', codec='MJPG', fps=12.):
         """
         Parameters
-            out_filename: The name of the file for the output file. This will be the same for video and csv
+            output_csv_address: The address we're outputting csv data to
+            output_avi_address: The address we're outputting avi data to
             window_name: What is the name of the window/program we're recording?
             codec: What codec are we using?
             fps: At what fps should we record?
@@ -50,20 +53,23 @@ class Recorder:
             self.out: cv2 VideoWriter object to record and write video
             self.frame_tracking:
             self.keyboard_out: Used to keep track of data for all frames
-            self.keyboard_outfile: The name of the file we're exporting to
+            self.output_csv_address: The name of the file we're exporting to
             self.df_out: The dataframe we use for transforming the output
         """
 
         # Initialize the codec we're using
         self.codec = cv2.VideoWriter_fourcc(*'{0}'.format(codec))
+        self.fps = fps
 
         # Grab the window we're recording and its dimensions
+        self.window_name = window_name
         self.window = gw.getWindowsWithTitle(window_name)[0]
         self.screen_width, self.screen_height = self.window.size
         self.screen_size = (self.screen_width, self.screen_height)
 
         # Initialize video writer to record video
-        self.out = cv2.VideoWriter(out_filename + '.avi', self.codec, fps, self.screen_size)
+        self.output_avi_address = output_avi_address
+        self.out = cv2.VideoWriter(self.output_avi_address, self.codec, fps, self.screen_size)
 
         # Initialize lists used for tracking mouse and keyboard
         self.frame_tracking = dict()
@@ -72,7 +78,7 @@ class Recorder:
 
         # Initialize variables needed for creating the outfile
         self.keyboard_out = []
-        self.keyboard_outfile = out_filename + '.csv'
+        self.output_csv_address = output_csv_address
         self.df_out = pd.DataFrame()
 
     def _initialize_frame_tracking(self):
@@ -160,9 +166,48 @@ class Recorder:
         """
         self.df_out = pd.DataFrame.from_dict(self.keyboard_out)
 
-    def run(self, record_seconds=10):
+    def _build_json(self, json_filename):
+        """
+        Parameters
+            json_filename: Where are we writing the json save?
+        Description:
+            Creates a new json save file
+            Writes:
+                recorded_csv_address: The address of the saved recorded key data
+                recorded_avi_address: The address of the saved video file
+                codec: Saved coded that the video is saved in
+                fps: Saved fps of the video
+                keys: What keys are we looking at?
+        Returns:
+            True to indicate a successful call
+        Called By:
+            self.run()
+        """
+
+        # Save colnames of key press and release that we're recording
+        keys = []
+        for key, item in self.frame_tracking.items():
+            if '_press' in key or '_release' in key:
+                keys.append(key)
+
+        # Build dict to write to json
+        json_dict = {
+            'recorded_csv_address': self.output_csv_address,
+            'recorded_avi_address': self.output_avi_address,
+            'codec': self.codec,
+            'fps': self.fps,
+            'keys': keys,
+            'window_name': self.window_name
+        }
+
+        # Write to json
+        json.dump(json_dict, open(json_filename, 'w'))
+        return True
+
+    def run(self, json_savefile, record_seconds=10):
         """
         Parameters:
+            json_savefile: JSON to save data about recording
             record_seconds: How many seconds should we record the screen?
         Description:
             Method to call when we want to record.
@@ -210,11 +255,12 @@ class Recorder:
         self._clean_output()
 
         # Check if path to write to already exists and remove it if it does
-        if os.path.isfile(self.keyboard_outfile):
-            os.remove(self.keyboard_outfile)
+        if os.path.isfile(self.output_csv_address):
+            os.remove(self.output_csv_address)
 
-        # Write output dict to csv
-        self.df_out.to_csv(self.keyboard_outfile, header='column+names', index=False)
+        # Write output dict to csv and save json
+        self.df_out.to_csv(self.output_csv_address, header='column+names', index=False)
+        self._build_json(json_savefile)
 
     def quit(self):
         """

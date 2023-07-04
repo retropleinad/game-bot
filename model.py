@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 import math
 import random
+import json
 
 from keras.models import Model
 from keras.optimizers import Adam
@@ -21,13 +22,14 @@ INPUT_AVI = 'D:/Python Projects/gameBot/recording output/gameplay.avi'
 BATCH_SIZE = 12
 
 
-def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True):
+def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, json_address=False):
     """
     Params:
         train_test_split: Decimal value of what percent of the dataset should be training
         num_batches: how many batches are we shuffling
         simple: should we shuffle simply or more algorithmically intensively
         shuffle: should lists returned be shuffled
+        json_address: Provide an address for a json if you want to save shuffle and train_test_split to it
     Description:
         Function to randomize batches
         Batches are 0-indexed
@@ -68,6 +70,13 @@ def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True):
     if shuffle:
         random.shuffle(train_batches)
         random.shuffle(test_batches)
+
+    # Save data to json
+    if not json_address:
+        json_save_data = json.load(open(json_address))
+        json_save_data['shuffle'] = shuffle
+        json_save_data['train_test_split'] = train_test_split
+        json.dump(json_save_data, json_address)
 
     return {'train': train_batches, 'test': test_batches}
 
@@ -414,21 +423,24 @@ class KeyModel:
         _add_key_branch(self, data, key_name)
         _add_mouse_branch(self, data, mouse_axis)
         _assemble_model(self)
+        _save_json(self, model_address):
         _compile_model(self)
         _fit_model(self)
         build_model(self)
     """
 
     def __init__(self,
+                 json_address,
                  input_shape,
                  initial_learn_rate=.004,
                  epochs=20,
                  batch_size=12,
-                 keys=('w_press', 'w_release'),
+                 keys=None,
                  mouse=False):
 
         """
         Parameters
+            json_address: The address of the json save file
             input_shape: ndarray dimensions for the model
             initial_learn_rate: model initial learn rate
             epochs: How many epochs should we train the model?
@@ -437,6 +449,8 @@ class KeyModel:
             mouse: Are we also trying to predict mouse position?
 
         Variables Initialized
+            self.json_save_data: Dict loaded from json save
+            self.json_address: Saved name of the json file
             self.input_shape: ndarray dimensions for the model
             self.initial_learn_Rate: model initial learn rate
             self.epochs: How many epochs should we train the model?
@@ -447,14 +461,22 @@ class KeyModel:
         """
 
         # [BATCH_SIZE, 876, 1616, 3]
+        # Save json data
+        self.json_save_data = json.load(open(json_address))
+        self.json_address = json_address
+
         # Initialize variables
         self.input_shape = input_shape
         self.initial_learn_rate = initial_learn_rate
         self.epochs = epochs
         self.batch_size = batch_size
-        self.keys = keys
         self.model = None
         self.mouse = mouse
+
+        if self.keys is not None:
+            self.keys = keys
+        else:
+            self.keys = self.json_save_data['keys']
 
         # Build the model
         self._assemble_model()
@@ -648,6 +670,28 @@ class KeyModel:
                            outputs=branches,
                            name='tree_farm')
 
+    def _save_json(self, model_address):
+        """
+        Parameters:
+            model_address: The address of where we're saving the model
+        Description:
+            Update and save our json with class variables
+        Returns:
+            True to indicate successful run
+        Called By:
+            self.build_model()
+        """
+
+        # Save class variables to json output dict
+        self.json_save_data['batch_size'] = self.batch_size
+        self.json_save_data['initial_learn_rate'] = self.initial_learn_rate
+        self.json_save_data['epochs'] = self.epochs
+        self.json_save_data['model_address'] = model_address
+
+        # Save json and return true
+        json.dump(self.json_save_data, self.json_address)
+        return True
+
     def _compile_model(self):
         """
         Description:
@@ -736,7 +780,9 @@ class KeyModel:
         # Save the model
         self.model.save('D:/Python Projects/gameBot/models/tree_farm')
 
-    def build_model(self):
+    # 'D:/Python Projects/gameBot/models/tree_farm'
+    def build_model(self, model_address=""):
+        self._save_json(model_address)
         pass
 
 
