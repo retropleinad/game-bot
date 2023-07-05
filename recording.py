@@ -166,10 +166,11 @@ class Recorder:
         """
         self.df_out = pd.DataFrame.from_dict(self.keyboard_out)
 
-    def _build_json(self, json_filename):
+    def _build_json(self, json_filename, input_shape):
         """
         Parameters
             json_filename: Where are we writing the json save?
+            input_shape: What are the dimensions of a frame that we're saving
         Description:
             Creates a new json save file
             Writes:
@@ -197,7 +198,8 @@ class Recorder:
             'codec': self.codec,
             'fps': self.fps,
             'keys': keys,
-            'window_name': self.window_name
+            'window_name': self.window_name,
+            'input_shape': input_shape
         }
 
         # Write to json
@@ -251,6 +253,9 @@ class Recorder:
             current_time = time.time()
             i += 1
 
+        # Save dimensions
+        input_shape = frame.shape
+
         # Clean csv output
         self._clean_output()
 
@@ -260,7 +265,7 @@ class Recorder:
 
         # Write output dict to csv and save json
         self.df_out.to_csv(self.output_csv_address, header='column+names', index=False)
-        self._build_json(json_savefile)
+        self._build_json(json_savefile, input_shape)
 
     def quit(self):
         """

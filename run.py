@@ -37,16 +37,16 @@ def build_dataset(record_seconds):
 
 
 def build_model():
-    save_data = json.load(open(minecraft_json))
-
-    km = KeyModel(input_shape=[876, 1616, 3],
+    km = KeyModel(json_address=minecraft_json,
                   initial_learn_rate=.004,
                   epochs=10,
                   batch_size=3,
-                  keys=generate_column_names(basic_keys),
+                  keys=['w_press', 'w_release', 'a_press', 'a_release'],
                   mouse=True)
 
     km.build_model()
 
 
-build_dataset(10)
+build_model()
+# ['w_press', 'w_release'] no mouse: 80% memory 90% cpu
+# What kills memory is the cpu working too hard

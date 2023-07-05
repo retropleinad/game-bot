@@ -17,12 +17,8 @@ from keras.layers.core import Activation
 from keras.layers import BatchNormalization
 from keras.layers import Input
 
-INPUT_CSV = 'D:/Python Projects/gameBot/processed output/gameplay.csv'
-INPUT_AVI = 'D:/Python Projects/gameBot/recording output/gameplay.avi'
-BATCH_SIZE = 12
 
-
-def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, json_address=False):
+def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, json_address=None):
     """
     Params:
         train_test_split: Decimal value of what percent of the dataset should be training
@@ -72,11 +68,14 @@ def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, j
         random.shuffle(test_batches)
 
     # Save data to json
-    if not json_address:
-        json_save_data = json.load(open(json_address))
-        json_save_data['shuffle'] = shuffle
-        json_save_data['train_test_split'] = train_test_split
-        json.dump(json_save_data, json_address)
+    if json_address is not None:
+        try:
+            json_save_data = json.load(open(json_address, 'r'))
+            json_save_data['shuffle'] = shuffle
+            json_save_data['train_test_split'] = train_test_split
+            json.dump(json_save_data, open(json_address, 'w'))
+        except FileNotFoundError:
+            print('given json file does not exist')
 
     return {'train': train_batches, 'test': test_batches}
 
@@ -107,7 +106,7 @@ class VideoParser(tf.keras.utils.Sequence):
     def __init__(self,
                  processed_csv_address,
                  initial_avi_address,
-                 processed_avi_address,
+                 processed_total_frames,
                  y_labels,
                  mouse_x_max=None,
                  mouse_y_max=None,
@@ -117,7 +116,7 @@ class VideoParser(tf.keras.utils.Sequence):
         Parameters:
             processed_csv_address: The address of the processed csv file
             initial_avi_address: The address of the unprocessed avi file
-            processed_avi_address: The address of the processed avi file
+            processed_total_frames: The total number of frames in the processed file
             y_labels: Set the columns that we care about for y
             mouse_x_max: What is the maximum mouse x position value?
             mouse_y_max: What is the maximum mouse y position value?
@@ -148,8 +147,7 @@ class VideoParser(tf.keras.utils.Sequence):
         # Save fields related to batches and size of video
         self.fps = self.video.get(cv2.CAP_PROP_FPS)
         self.batch_size = batch_size
-        processed_video = cv2.VideoCapture(processed_avi_address)
-        self.num_frames = int(processed_video.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.num_frames = processed_total_frames
         self.batches = batches
 
         # Save mouse max values
@@ -370,9 +368,7 @@ class VideoParser(tf.keras.utils.Sequence):
         """
 
         # Parse data from the csv
-        keys_df = self._parse_csv(num_frames,
-                                  start * self.batch_size + 1,
-                                  labels)
+        keys_df = self._parse_csv(num_frames, labels, start=start * self.batch_size + 1)
 
         # Get the ids of the frames from csv so that we can pull them from avi
         ids = keys_df['id'].to_list()
@@ -426,12 +422,12 @@ class KeyModel:
         _save_json(self, model_address):
         _compile_model(self)
         _fit_model(self)
-        build_model(self)
+        build_model(self, model_address):
     """
 
     def __init__(self,
                  json_address,
-                 input_shape,
+                 input_shape=None,
                  initial_learn_rate=.004,
                  epochs=20,
                  batch_size=12,
@@ -462,26 +458,25 @@ class KeyModel:
 
         # [BATCH_SIZE, 876, 1616, 3]
         # Save json data
-        self.json_save_data = json.load(open(json_address))
+        self.json_save_data = json.load(open(json_address, 'r'))
         self.json_address = json_address
 
         # Initialize variables
-        self.input_shape = input_shape
         self.initial_learn_rate = initial_learn_rate
         self.epochs = epochs
         self.batch_size = batch_size
         self.model = None
         self.mouse = mouse
 
-        if self.keys is not None:
+        if input_shape is not None:
+            self.input_shape = input_shape
+        else:
+            self.input_shape = self.json_save_data['input_shape']
+
+        if keys is not None:
             self.keys = keys
         else:
             self.keys = self.json_save_data['keys']
-
-        # Build the model
-        self._assemble_model()
-        self._compile_model()
-        self._fit_model()
 
     def _make_default_hidden_layers(self, data):
         """
@@ -689,7 +684,7 @@ class KeyModel:
         self.json_save_data['model_address'] = model_address
 
         # Save json and return true
-        json.dump(self.json_save_data, self.json_address)
+        json.dump(self.json_save_data, open(self.json_address, 'w'))
         return True
 
     def _compile_model(self):
@@ -746,13 +741,14 @@ class KeyModel:
             self.build_model() (after updates)
         """
 
-        # Grab the number of frames and number of batches from the cv2 object
-        video = cv2.VideoCapture('D:/Python Projects/gameBot/processed output/gameplay.avi')
-        num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-        num_batches = int(num_frames // self.batch_size)
+        # Grab the number of frames from json save and divide by batch size
+        num_batches = int(self.json_save_data['processed_total_frames'] // self.batch_size)
 
         # Shuffle batch numbers for randomness in order and what we feed into train/test generators
-        batches = shuffle_batches(.7, num_batches)
+        batches = shuffle_batches(train_test_split=.7,
+                                  num_batches=num_batches,
+                                  shuffle=True,
+                                  json_address=self.json_address)
 
         # Assign mouse_x_max and mouse_y_max
         if self.mouse:
@@ -764,26 +760,46 @@ class KeyModel:
 
         # Build train and test generators
         # The key difference between the two is setting batches equal to batches['train] or batches['test]
-        train_generator = VideoParser(INPUT_CSV, INPUT_AVI,
-                                      'D:/Python Projects/gameBot/processed output/gameplay.avi',
-                                      self.keys, batch_size=self.batch_size, batches=batches['train'],
+        train_generator = VideoParser(self.json_save_data['processed_csv_address'],
+                                      self.json_save_data['recorded_avi_address'],
+                                      self.json_save_data['processed_total_frames'],
+                                      y_labels=self.keys,
+                                      batch_size=self.batch_size,
+                                      batches=batches['train'],
                                       mouse_x_max=mouse_x_max,
                                       mouse_y_max=mouse_y_max)
-        test_generator = VideoParser(INPUT_CSV, INPUT_AVI,
-                                     'D:/Python Projects/gameBot/processed output/gameplay.avi',
-                                     self.keys, batch_size=self.batch_size, batches=batches['test'],
+
+        test_generator = VideoParser(self.json_save_data['processed_csv_address'],
+                                     self.json_save_data['recorded_avi_address'],
+                                     self.json_save_data['processed_total_frames'],
+                                     y_labels=self.keys,
+                                     batch_size=self.batch_size,
+                                     batches=batches['test'],
                                      mouse_x_max=mouse_x_max,
                                      mouse_y_max=mouse_y_max)
 
         # Fit the model (this likely will take a while)
         self.model.fit(train_generator, validation_data=test_generator, epochs=5)
-        # Save the model
-        self.model.save('D:/Python Projects/gameBot/models/tree_farm')
 
     # 'D:/Python Projects/gameBot/models/tree_farm'
-    def build_model(self, model_address=""):
+    def build_model(self, model_address="D:/Python Projects/gameBot/models/tree_farm"):
+        """
+        Description:
+            Method to call to do everything involved with creating a model
+            Calls functions to assemble, compile, and fit the model. As well as save the json and the model.
+            This is the function that users should call, instead of calling each individual function
+        Parameters:
+            model_address: What is the address of where we should save the model?
+        Returns:
+            True to indicate a successful run
+        """
+
+        self._assemble_model()
+        self._compile_model()
         self._save_json(model_address)
-        pass
+        self._fit_model()
+        self.model.save(model_address)
+        return True
 
 
 # https://www.tutorialspoint.com/tensorflow/image_recognition_using_tensorflow.htm
