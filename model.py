@@ -9,11 +9,11 @@ import json
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.layers import Conv2D
-from keras.layers.convolutional import MaxPooling2D
+from keras.layers import MaxPooling2D
 from keras.layers import Flatten
 from keras.layers import Dense
 from keras.layers import Dropout
-from keras.layers.core import Activation
+from keras.layers import Activation
 from keras.layers import BatchNormalization
 from keras.layers import Input
 
@@ -699,8 +699,7 @@ class KeyModel:
         """
 
         # Build the optimizer for the NN
-        optimizer = Adam(learning_rate=self.initial_learn_rate,
-                         decay=self.initial_learn_rate / self.epochs)
+        optimizer = Adam(learning_rate=self.initial_learn_rate)
 
         # Create dicts to assign loss, loss_weights, and metrics
         loss = {}

@@ -1,4 +1,6 @@
 import json
+import os
+import tensorflow as tf
 
 from recording import Recorder
 from preprocessing import EmptyFrameRemover
@@ -16,6 +18,7 @@ minecraft_all_keys = ('1', '2', '3', '4', '5', '6', '7', '8', '9',
                       'lmouse', 'rmouse')
 
 basic_keys = ('w', 'a', 's', 'd', 'lmouse', 'rmouse')
+wasd = ('w', 'a', 's', 'd')
 
 
 def generate_column_names(keys):
@@ -41,12 +44,14 @@ def build_model():
                   initial_learn_rate=.004,
                   epochs=10,
                   batch_size=3,
-                  keys=['w_press', 'w_release', 'a_press', 'a_release'],
-                  mouse=True)
+                  keys=generate_column_names(wasd),
+                  mouse=False)
 
     km.build_model()
 
 
+# check tf.memory() after each frame/batch?
 build_model()
+
 # ['w_press', 'w_release'] no mouse: 80% memory 90% cpu
 # What kills memory is the cpu working too hard
