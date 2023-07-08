@@ -1,4 +1,5 @@
 import json
+import numpy as np
 
 from model import VideoParser
 from model import KeyModel
@@ -115,6 +116,28 @@ def updated_video_parser_test():
                                   batches=batches['train'])
 
     print(train_generator[0])
+
+
+def np_normalization_test():
+    batch_size = 3
+    json_save_data = json.load(open('D:/Python Projects/gameBot/saves/minecraft.json', 'r'))
+
+    num_batches = int(json_save_data['processed_total_frames'] // batch_size)
+
+    # Shuffle batch numbers for randomness in order and what we feed into train/test generators
+    batches = shuffle_batches(train_test_split=.7,
+                              num_batches=num_batches,
+                              shuffle=True)
+
+    train_generator = VideoParser(json_save_data['processed_csv_address'],
+                                  json_save_data['recorded_avi_address'],
+                                  json_save_data['processed_total_frames'],
+                                  y_labels=['w_press', 'w_release'],
+                                  batch_size=batch_size,
+                                  batches=batches['train'])
+
+    x_vals = train_generator[0]
+    x_vals = np.astype()
 
 
 updated_video_parser_test()

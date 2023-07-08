@@ -105,7 +105,7 @@ class VideoParser(tf.keras.utils.Sequence):
 
     def __init__(self,
                  processed_csv_address,
-                 initial_avi_address,
+                 processed_avi_address,
                  processed_total_frames,
                  y_labels,
                  mouse_x_max=None,
@@ -137,7 +137,7 @@ class VideoParser(tf.keras.utils.Sequence):
         """
 
         # Use file_name to find the video file and the csv
-        self.video = cv2.VideoCapture(initial_avi_address)
+        self.video = cv2.VideoCapture(processed_avi_address)
         self.processed_csv_address = processed_csv_address
 
         # Load headers and save column names we care about
@@ -175,7 +175,8 @@ class VideoParser(tf.keras.utils.Sequence):
                                               labels=self.y_labels)
         # Preprocess X
         x = df['frame'].to_list()
-        x = np.asarray(x).astype('uint8')
+        x = np.asarray(x).astype('float16')
+        x = (x + 1) / 256
         # x = x / 255
 
         # Preprocess Y
@@ -706,11 +707,15 @@ class KeyModel:
         loss_weights = {}
         metrics = {}
 
+        # Create list to keep track of the ordinance of each branch
+        model_branch_ordinance = []
+
         # Populate the dicts for key press
         for key in self.keys:
             loss[key] = 'binary_crossentropy'
             loss_weights[key] = 0.1
             metrics[key] = 'accuracy'
+            model_branch_ordinance.append(key)
 
         # Populate the dicts if we're calculating mouse position
         if self.mouse:
@@ -722,11 +727,17 @@ class KeyModel:
             loss_weights['mouse_y_normalized'] = 4.
             metrics['mouse_y_normalized'] = 'mae'
 
+            model_branch_ordinance.append('mouse_x_normalized')
+            model_branch_ordinance.append('mouse_y_normalized')
+
         # Compile the model
         self.model.compile(optimizer=optimizer,
                            loss=loss,
                            loss_weights=loss_weights,
                            metrics=metrics)
+
+        # Output ordinance of branches to model
+        self.json_save_data['model_branch_ordinance'] = model_branch_ordinance
 
     # https://pyimagesearch.com/2018/12/24/how-to-use-keras-fit-and-fit_generator-a-hands-on-tutorial/
     def _fit_model(self):
@@ -760,7 +771,7 @@ class KeyModel:
         # Build train and test generators
         # The key difference between the two is setting batches equal to batches['train] or batches['test]
         train_generator = VideoParser(self.json_save_data['processed_csv_address'],
-                                      self.json_save_data['recorded_avi_address'],
+                                      self.json_save_data['processed_avi_address'],
                                       self.json_save_data['processed_total_frames'],
                                       y_labels=self.keys,
                                       batch_size=self.batch_size,
@@ -769,7 +780,7 @@ class KeyModel:
                                       mouse_y_max=mouse_y_max)
 
         test_generator = VideoParser(self.json_save_data['processed_csv_address'],
-                                     self.json_save_data['recorded_avi_address'],
+                                     self.json_save_data['processed_avi_address'],
                                      self.json_save_data['processed_total_frames'],
                                      y_labels=self.keys,
                                      batch_size=self.batch_size,
@@ -778,7 +789,7 @@ class KeyModel:
                                      mouse_y_max=mouse_y_max)
 
         # Fit the model (this likely will take a while)
-        self.model.fit(train_generator, validation_data=test_generator, epochs=5)
+        self.model.fit(train_generator, validation_data=test_generator, epochs=self.epochs)
 
     # 'D:/Python Projects/gameBot/models/tree_farm'
     def build_model(self, model_address="D:/Python Projects/gameBot/models/tree_farm"):
@@ -795,9 +806,9 @@ class KeyModel:
 
         self._assemble_model()
         self._compile_model()
-        self._save_json(model_address)
         self._fit_model()
         self.model.save(model_address)
+        self._save_json(model_address)
         return True
 
 

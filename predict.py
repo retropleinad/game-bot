@@ -2,9 +2,11 @@ import cv2
 import pyautogui
 import pygetwindow as gw
 import numpy as np
+import json
 
-from pynput import keyboard
+from pynput import keyboard, mouse
 from keras.models import load_model
+from preprocessing import resize_np_image
 
 
 class Predictor:
@@ -21,11 +23,12 @@ class Predictor:
 
     """
 
-    def __init__(self, model_address, window_name='minecraft'):
+    def __init__(self, model_address, json_address, window_name='minecraft'):
         """
         Parameters
             model_address: The address of the model save
             window_name: The name of the window we're making predictions on
+            json_address: The address of the json save file
 
         Variables Initialized:
             self.saved_key: Saves a key when pressed - class variable due to pynput functionality
@@ -45,7 +48,12 @@ class Predictor:
         self.screen_size = (self.screen_width, self.screen_height)
 
         # Initialize keras model
+        print('Beginning to load model')
         self.model = load_model(model_address)
+        print('Finished loading model')
+
+        # Initialize json save data
+        self.json_save_data = json.load(open(json_address, 'r'))
 
     """
     pynput key functions
@@ -76,6 +84,9 @@ class Predictor:
         key_listener.start()
         key_control = keyboard.Controller()
 
+        # Initialize mouse controller
+        mouse_control = mouse.Controller()
+
         # Runs while true
         run = True
         # When true, make predictions
@@ -100,24 +111,41 @@ class Predictor:
 
                 # Do basic processing on frame to prepare it for model
                 frame = np.array(image)
+                frame = resize_np_image(frame, .1)
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = np.asarray(frame).astype('uint8').reshape((1, 876, 1616, 3))
-                # Frame should be ndarray (876, 1616, 3)
+                frame = np.asarray(frame).astype('float16').reshape((1, 87, 161, 3))
+                frame = (frame + 1) / 256
 
                 # Output predictions from model
                 predictions = self.model.predict(frame)
 
-                # Hardcoded for: 'w_press', 'w_release', 'a_press', 'a_release'
-                # If the model predicts hit/release, then perform that action
-                if predictions[0][0, 1] > .5:
-                    print('pressing w')
-                    key_control.press('w')
-                if predictions[1][0, 1] > .5:
-                    pass
-                    key_control.release('w')
-                if predictions[2][0, 1] > .5:
-                    print('pressing a')
-                    key_control.press('a')
-                if predictions[3][0, 1] > .5:
-                    pass
-                    key_control.release('a')
+                # Remember lmouse & rmouse
+                col_names = self.json_save_data['model_branch_ordinance']
+                for i in range(0, len(col_names)):
+
+                    coords = [-1000, -1000]
+                    if col_names[i] == 'mouse_x_normalized':
+                        coords[0] = predictions[i] * 1616
+                    elif col_names[i] == 'mouse_y_normalized':
+                        coords[1] = predictions[i] * 876
+                        mouse_control.move(coords[0], coords[1])
+                    elif predictions[i][0, 1] > .3:
+                        key = col_names[i].split('_')[0]
+
+                        if i % 2 == 0:
+                            print('Pressing ', col_names[i])
+                            if key == 'lmouse':
+                                mouse_control.press(mouse.Button.left)
+                            elif key == 'rmouse':
+                                mouse_control.press(mouse.Button.right)
+                            else:
+                                key_control.press(col_names[i][0])
+
+                        else:
+                            print('Releasing ', col_names[i])
+                            if key == 'lmouse':
+                                mouse_control.release(mouse.Button.left)
+                            elif key == 'rmouse':
+                                mouse_control.release(mouse.Button.right)
+                            else:
+                                key_control.release(col_names[i][0])

@@ -4,6 +4,24 @@ import numpy as np
 import json
 
 
+def resize_np_image(image_array, resize_percent):
+    """
+    Parameters:
+        image_array: numpy array of image we're resizing
+        resize_percent: The extent to which we're scaling the image. Percents should be input as decimals.
+    Description:
+        Function to resize a cv2 array converted to a numpy array
+    Returns
+        Resized array
+    Called By
+        EmptyFrameRemover._shrink_video_data()
+        predict.Predictor.run_predictions()
+    """
+    width = int(image_array.shape[1] * resize_percent)
+    height = int(image_array.shape[0] * resize_percent)
+    return cv2.resize(image_array, [width, height], interpolation=cv2.INTER_AREA)
+
+
 class EmptyFrameRemover:
 
     """
@@ -14,10 +32,10 @@ class EmptyFrameRemover:
     Methods:
         __init__(self)
         df_remove_empty_frames(self, df)
-        _remove_empty_frames_csv(self, output_csv_address, json_address, search_cols=None)
-        _remove_empty_frames_video(self, output_avi_address, frame_ids)
+        _remove_empty_frames_csv(self, output_csv_address, search_cols=None)
+        _shrink_video_data(self, output_avi_address, resize_percent=1.)
         _save_json(self):
-        remove_empty_frames(self, output_csv_address=None, output_avi_address=None, search_cols=None):
+        remove_empty_frames(self, output_csv_address, output_avi_address, resize_percent=1., search_cols=None):
     """
 
     def __init__(self, json_address):
@@ -85,8 +103,8 @@ class EmptyFrameRemover:
             search_cols: Columns to search if they're empty. If none, search all.
         Description:
             Takes a csv and removes rows where target columns have a value of 0
-        Returns:
-            List of ids of records not removed
+        Returns
+            True to indicate successful run
         Called By:
             remove_empty_frames()
         """
@@ -96,10 +114,11 @@ class EmptyFrameRemover:
         csv_header_cols = csv_header_df.columns
         csv_header_df.to_csv(output_csv_address, header='column+names', index=False)
 
-        # List used to keep track of ids we don't remove
-        ids = []
         # Iterator for where to pull rows from csv
         i = 0
+
+        # Initiate int to track processed frames
+        processed_total_frames = 0
 
         # Read the first 1000 rows of the csv
         keyboard_df = pd.read_csv(self.json_save_data['recorded_csv_address'],
@@ -118,7 +137,7 @@ class EmptyFrameRemover:
                                index=False)
 
             # Save good ids, increase iterator by 1000, and read more rows
-            ids = ids + keyboard_df['id'].to_list()
+            processed_total_frames = processed_total_frames + keyboard_df.shape[0]
             i += 1000
             keyboard_df = pd.read_csv(self.json_save_data['recorded_csv_address'],
                                       skiprows=i + 1,
@@ -127,17 +146,15 @@ class EmptyFrameRemover:
                                       names=csv_header_cols)
 
         # Save number of remaining frames and processed file name to json
-        self.json_save_data['processed_total_frames'] = len(ids)
+        self.json_save_data['processed_total_frames'] = processed_total_frames
         self.json_save_data['processed_csv_address'] = output_csv_address
+        return True
 
-        # Return ids of rows that we kept
-        return ids
-
-    def _remove_empty_frames_video(self, output_avi_address, frame_ids):
+    def _shrink_video_data(self, output_avi_address, resize_percent=1.):
         """
         Parameters:
             output_avi_address: the address of the avi we're outputting cleaned data
-            frame_ids: ids of frames we want to keep
+            resize_percent: The percentage by which we should resize a frame. For example, .5 would cut it in half
         Description:
             Given a list of frame_ids, only writes those to output file
         Returns:
@@ -155,8 +172,8 @@ class EmptyFrameRemover:
         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
 
         # Grab frame sizes from VideoCapture object to use in VideoWriter object
-        read_width = int(video_reader.get(cv2.CAP_PROP_FRAME_WIDTH))
-        read_height = int(video_reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        read_width = int(video_reader.get(cv2.CAP_PROP_FRAME_WIDTH) * resize_percent)
+        read_height = int(video_reader.get(cv2.CAP_PROP_FRAME_HEIGHT) * resize_percent)
         frame_size = (read_width, read_height)
 
         # Create VideoWriter output object
@@ -166,16 +183,21 @@ class EmptyFrameRemover:
                                        frame_size)
 
         # Loop through the id of each frame we want to keep
-        for i in frame_ids:
+        for i in range(0, int(video_reader.get(cv2.CAP_PROP_FRAME_COUNT))):
             # Grab the frame
-            video_reader.set(cv2.CAP_PROP_POS_FRAMES, int(i))
+            video_reader.set(cv2.CAP_PROP_POS_FRAMES, i)
             frame_exists, current_frame = video_reader.read()
+
+            # Resize the frame
+            if resize_percent != 1.:
+                current_frame = resize_np_image(current_frame, resize_percent)
 
             # Convert frame to numpy array and output it
             current_frame = np.array(current_frame)
             video_writer.write(current_frame)
 
         # Save the processed avi address to the json dict
+        self.json_save_data['input_shape'] = current_frame.shape
         self.json_save_data['processed_avi_address'] = output_avi_address
         return True
 
@@ -189,11 +211,12 @@ class EmptyFrameRemover:
         json.dump(self.json_save_data, open(self.json_address, 'w'))
         return True
 
-    def remove_empty_frames(self, output_csv_address, output_avi_address, search_cols=None):
+    def remove_empty_frames(self, output_csv_address, output_avi_address, resize_percent=1., search_cols=None):
         """
         Parameters:
             output_csv_address: The address of the csv we're outputting cleaned data
             output_avi_address: The address of the avi we're outputting cleaned data
+            resize_percent: The percentage by which we should resize a frame. For example, .5 would cut it in half
             search_cols: Columns to search if they're empty. If none, search all.
         Description:
             Removes empty frames from the avi and csv and creates new files with frames removed
@@ -203,9 +226,9 @@ class EmptyFrameRemover:
         """
 
         # Process the csv and save good frame ids
-        ids = self._remove_empty_frames_csv(output_csv_address, search_cols)
+        self._remove_empty_frames_csv(output_csv_address, search_cols)
         # Process the avi
-        self._remove_empty_frames_video(output_avi_address, ids)
+        self._shrink_video_data(output_avi_address, resize_percent=resize_percent)
         # Save everything to the json file
         self._save_json()
         return True
