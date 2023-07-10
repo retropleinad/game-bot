@@ -136,8 +136,8 @@ def np_normalization_test():
                                   batch_size=batch_size,
                                   batches=batches['train'])
 
-    x_vals = train_generator[0]
-    x_vals = np.astype()
+    x_vals = train_generator[0][0]
+    i = 3
 
 
-updated_video_parser_test()
+np_normalization_test()

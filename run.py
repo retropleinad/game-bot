@@ -36,7 +36,7 @@ def generate_column_names(keys):
 
 
 def build_dataset(record_seconds):
-    recorder = Recorder(recorded_csv, recorded_avi, minecraft_all_keys)
+    recorder = Recorder(recorded_csv, recorded_avi, tree_farm_keys)
     recorder.run(minecraft_json, record_seconds)
     recorder.quit()
     print('successfully recorded video')
@@ -44,6 +44,7 @@ def build_dataset(record_seconds):
     efr = EmptyFrameRemover(minecraft_json)
     # Clean up json read/write in EmptyFrameRemover
     efr.remove_empty_frames(processed_csv, processed_avi, .1)
+    print('successfully removed empty frames')
 
 
 def build_model():
@@ -51,7 +52,7 @@ def build_model():
                   initial_learn_rate=.004,
                   epochs=20,
                   batch_size=12,
-                  keys=generate_column_names(minecraft_all_keys),
+                  keys=generate_column_names(tree_farm_keys),
                   mouse=True)
 
     km.build_model()
@@ -63,7 +64,7 @@ def make_predictions():
     predictor.run_predictions()
 
 
-build_model()
+make_predictions()
 # check tf.memory() after each frame/batch?
 
 # ['w_press', 'w_release'] no mouse: 80% memory 90% cpu

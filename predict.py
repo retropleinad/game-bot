@@ -129,7 +129,7 @@ class Predictor:
                     elif col_names[i] == 'mouse_y_normalized':
                         coords[1] = predictions[i] * 876
                         mouse_control.move(coords[0], coords[1])
-                    elif predictions[i][0, 1] > .3:
+                    elif predictions[i][0, 1] >= .5:
                         key = col_names[i].split('_')[0]
 
                         if i % 2 == 0:

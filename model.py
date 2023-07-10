@@ -80,6 +80,19 @@ def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, j
     return {'train': train_batches, 'test': test_batches}
 
 
+# https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+# https://stackoverflow.com/questions/46009619/keras-weighted-binary-crossentropy
+# https://towardsdatascience.com/dealing-with-imbalanced-data-in-tensorflow-class-weights-60f876911f99
+def calculate_weights():
+    """
+    Should return a dict of {class_label: class_weight}
+    Integrate weights into a customized loss function
+    Cannot yet use built in class_weight
+    :return:
+    """
+    pass
+
+
 class VideoParser(tf.keras.utils.Sequence):
     """
     class VideoParser
