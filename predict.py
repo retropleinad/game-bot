@@ -95,7 +95,7 @@ class Predictor:
         # Main loop
         while run:
             # Basic keybinds to make Run false and toggle predictions
-            if self.saved_key == 'esc':
+            if self.saved_key == 'f9':
                 run = False
             if self.saved_key == 'f8':
                 predict = True
@@ -119,17 +119,22 @@ class Predictor:
                 # Output predictions from model
                 predictions = self.model.predict(frame)
 
+                coords = [-1000, -1000]
                 # Remember lmouse & rmouse
                 col_names = self.json_save_data['model_branch_ordinance']
                 for i in range(0, len(col_names)):
 
-                    coords = [-1000, -1000]
                     if col_names[i] == 'mouse_x_normalized':
-                        coords[0] = predictions[i] * 1616
+                        coords[0] = predictions[i][0][0] * 1616
+                        if coords[1] != -1000:
+                            mouse_control.move(coords[0], coords[1])
                     elif col_names[i] == 'mouse_y_normalized':
-                        coords[1] = predictions[i] * 876
-                        mouse_control.move(coords[0], coords[1])
+                        coords[1] = predictions[i][0][0] * 876
+                        if coords[0] != -1000:
+                            mouse_control.move(coords[0], coords[1])
+
                     elif predictions[i][0, 1] >= .5:
+                        pass
                         key = col_names[i].split('_')[0]
 
                         if i % 2 == 0:

@@ -93,6 +93,12 @@ def calculate_weights():
     pass
 
 
+def weighted_categorical_crossentropy(class_weight):
+
+    def loss(y_obs, y_pred):
+        pass
+
+
 class VideoParser(tf.keras.utils.Sequence):
     """
     class VideoParser

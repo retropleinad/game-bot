@@ -51,7 +51,7 @@ def build_model():
     km = KeyModel(json_address=minecraft_json,
                   initial_learn_rate=.004,
                   epochs=20,
-                  batch_size=12,
+                  batch_size=36,
                   keys=generate_column_names(tree_farm_keys),
                   mouse=True)
 
