@@ -8,6 +8,8 @@ from pynput import keyboard, mouse
 from keras.models import load_model
 from preprocessing import resize_np_image
 
+from model import create_weighted_binary_crossentropy
+
 
 class Predictor:
 
@@ -49,7 +51,8 @@ class Predictor:
 
         # Initialize keras model
         print('Beginning to load model')
-        self.model = load_model(model_address)
+        self.model = load_model(model_address,
+                                custom_objects={'weighted_binary_crossentropy': create_weighted_binary_crossentropy})
         print('Finished loading model')
 
         # Initialize json save data

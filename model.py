@@ -1,3 +1,4 @@
+import keras.losses
 import pandas as pd
 import cv2
 import numpy as np
@@ -8,6 +9,7 @@ import json
 
 from keras.models import Model
 from keras.optimizers import Adam
+from keras.utils import get_custom_objects
 from keras.layers import Conv2D
 from keras.layers import MaxPooling2D
 from keras.layers import Flatten
@@ -16,6 +18,9 @@ from keras.layers import Dropout
 from keras.layers import Activation
 from keras.layers import BatchNormalization
 from keras.layers import Input
+
+from sklearn.utils import class_weight
+from keras.utils.generic_utils import register_keras_serializable
 
 
 def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, json_address=None):
@@ -83,20 +88,77 @@ def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, j
 # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
 # https://stackoverflow.com/questions/46009619/keras-weighted-binary-crossentropy
 # https://towardsdatascience.com/dealing-with-imbalanced-data-in-tensorflow-class-weights-60f876911f99
-def calculate_weights():
+def build_class_weights(y_label, csv_address, debug=False):
     """
-    Should return a dict of {class_label: class_weight}
-    Integrate weights into a customized loss function
-    Cannot yet use built in class_weight
-    :return:
+    Params
+        y_label: The y column name in the csv
+        csv_address: The string address of the csv file
+        debug: Set to true to calculate and print debugging values
+    Description
+        Wrapper function for sklearn.utils.class_weight.compute_class_weight()
+        Pulls entire column from csv to successfully run aforementioned sklearn function
+        This is necessary as our model uses a data generator
+    Returns
+        ndarray of [weight for 0, weight for 1]
     """
-    pass
+
+    # Read csv and convert to np array
+    df = pd.read_csv(csv_address, usecols=[y_label])
+    arr = df.to_numpy().flatten()
+
+    # Calculate weights from sklearn method
+    weights = class_weight.compute_class_weight(class_weight='balanced', classes=[0, 1], y=arr)
+
+    # Debug to calculate values and ratios
+    if debug:
+        # Generate basic counts
+        num_0 = np.count_nonzero(arr == 0.)
+        num_1 = np.count_nonzero(arr == 1.)
+        total = arr.shape[0]
+
+        # Calculate the percent of the data set for each value
+        percent_0 = num_0 / total * 100
+        percent_1 = num_1 / total * 100
+        print('Percent 0: ', percent_0)
+        print('Percent 1: ', percent_1)
+
+        # Do the ratios of generated weights and calculated percents align? (They do)
+        generated_weight_ratio = weights[1] / weights[0]
+        calculated_percent_ratio = percent_0 / percent_1
+        print('Generated weight ratio: ', generated_weight_ratio)
+        print('Calculated percent ratio: ', calculated_percent_ratio)
+
+    return weights
 
 
-def weighted_categorical_crossentropy(class_weight):
+@register_keras_serializable()
+def create_weighted_binary_crossentropy(class_weights):
+    """
+    Params
+        class_weights: Weights of 0 and 1 values
+    Description
+        Create a weighted binary crossentropy function for compiling keras model
+    Returns
+        Loss function
+    Called By
+        model._compile_model()
+    """
 
-    def loss(y_obs, y_pred):
-        pass
+    def weighted_binary_crossentropy(y_obs, y_pred):
+        """
+        Params
+            y_obs: The actual y values
+            y_pred: The predicted y values
+        Description
+            Calculates binary crossentropy loss then applies a weight
+        Returns
+            Weighted loss value
+        """
+
+        bce = keras.losses.binary_crossentropy(y_obs, y_pred)
+        return bce * class_weights[1]
+
+    return weighted_binary_crossentropy
 
 
 class VideoParser(tf.keras.utils.Sequence):
@@ -731,7 +793,9 @@ class KeyModel:
 
         # Populate the dicts for key press
         for key in self.keys:
-            loss[key] = 'binary_crossentropy'
+            class_weights = build_class_weights(key, self.json_save_data['processed_csv_address'])
+            loss[key] = create_weighted_binary_crossentropy(class_weights)
+
             loss_weights[key] = 0.1
             metrics[key] = 'accuracy'
             model_branch_ordinance.append(key)
@@ -822,6 +886,8 @@ class KeyModel:
         Returns:
             True to indicate a successful run
         """
+
+        get_custom_objects().clear()
 
         self._assemble_model()
         self._compile_model()

@@ -1,10 +1,13 @@
 import json
 import numpy as np
+import keras.losses
 
 from model import VideoParser
 from model import KeyModel
 from model import shuffle_batches
+from model import build_class_weights
 from predict import Predictor
+from sklearn.utils import class_weight
 
 
 INPUT_CSV = 'D:/Python Projects/gameBot/processed output/gameplay.csv'
@@ -140,4 +143,24 @@ def np_normalization_test():
     i = 3
 
 
-np_normalization_test()
+def build_class_weights_test():
+    weights = build_class_weights('w_press',
+                                  'D:/Python Projects/gameBot/processed output/minecraft_gameplay.csv',
+                                  True)
+    print(weights)
+
+
+def inspect_binary_loss():
+    sample_y_obs = [0, 1, 0, 0]
+    sample_y_pred = [0.6, 0.4, 0.4, 0.6]
+    loss = keras.losses.binary_crossentropy(sample_y_obs, sample_y_pred, from_logits=False)
+    print(loss)
+
+    weights = class_weight.compute_class_weight(class_weight='balanced', classes=[0, 1], y=np.array(sample_y_obs))
+    print(weights)
+
+    weighted_loss = loss * weights[1]
+    print(weighted_loss)
+
+
+inspect_binary_loss()
