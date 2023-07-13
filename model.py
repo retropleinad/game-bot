@@ -23,7 +23,9 @@ from sklearn.utils import class_weight
 from keras.utils.generic_utils import register_keras_serializable
 
 
-def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, json_address=None):
+def shuffle_batches(train_test_split, num_batches,
+                    simple=False, shuffle=True, json_address=None,
+                    batch_length_multiplier=1):
     """
     Params:
         train_test_split: Decimal value of what percent of the dataset should be training
@@ -31,6 +33,7 @@ def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, j
         simple: should we shuffle simply or more algorithmically intensively
         shuffle: should lists returned be shuffled
         json_address: Provide an address for a json if you want to save shuffle and train_test_split to it
+        length_multiplier: How many times should we recycle data to increase batch size
     Description:
         Function to randomize batches
         Batches are 0-indexed
@@ -66,6 +69,21 @@ def shuffle_batches(train_test_split, num_batches, simple=False, shuffle=True, j
                 train_batches.append(i)
             else:
                 test_batches.append(i)
+
+    # If we're multiplying batch length by recycling data....
+    if batch_length_multiplier > 1:
+        # Create lists to keep track of all train and test batches
+        all_train = []
+        all_test = []
+
+        # Loop through test and train batches n times and add them to the lists
+        for i in range(0, batch_length_multiplier):
+            all_train = all_train + train_batches
+            all_test = all_test + test_batches
+
+        # Set test and train batches to be lists of all test/train batches
+        train_batches = all_train
+        test_batches = all_test
 
     # Shuffle where batch number appears in array
     if shuffle:
@@ -823,7 +841,7 @@ class KeyModel:
         self.json_save_data['model_branch_ordinance'] = model_branch_ordinance
 
     # https://pyimagesearch.com/2018/12/24/how-to-use-keras-fit-and-fit_generator-a-hands-on-tutorial/
-    def _fit_model(self):
+    def _fit_model(self, batch_length_multiplier):
         """
         Description:
             Still very hard-coded, needs to be changed.
@@ -841,7 +859,8 @@ class KeyModel:
         batches = shuffle_batches(train_test_split=.7,
                                   num_batches=num_batches,
                                   shuffle=True,
-                                  json_address=self.json_address)
+                                  json_address=self.json_address,
+                                  batch_length_multiplier=batch_length_multiplier)
 
         # Assign mouse_x_max and mouse_y_max
         if self.mouse:
@@ -874,8 +893,7 @@ class KeyModel:
         # Fit the model (this likely will take a while)
         self.model.fit(train_generator, validation_data=test_generator, epochs=self.epochs)
 
-    # 'D:/Python Projects/gameBot/models/tree_farm'
-    def build_model(self, model_address="D:/Python Projects/gameBot/models/tree_farm"):
+    def build_model(self, model_address="D:/Python Projects/gameBot/models/tree_farm", batch_length_multiplier=1):
         """
         Description:
             Method to call to do everything involved with creating a model
@@ -883,6 +901,7 @@ class KeyModel:
             This is the function that users should call, instead of calling each individual function
         Parameters:
             model_address: What is the address of where we should save the model?
+            batch_length_multiplier: By what multiplier should we duplicate data to create a larger dataset
         Returns:
             True to indicate a successful run
         """
@@ -891,7 +910,7 @@ class KeyModel:
 
         self._assemble_model()
         self._compile_model()
-        self._fit_model()
+        self._fit_model(batch_length_multiplier)
         self.model.save(model_address)
         self._save_json(model_address)
         return True

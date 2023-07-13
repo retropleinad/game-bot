@@ -130,14 +130,15 @@ class Predictor:
                     if col_names[i] == 'mouse_x_normalized':
                         coords[0] = predictions[i][0][0] * 1616
                         if coords[1] != -1000:
-                            mouse_control.move(coords[0], coords[1])
+                            pass
+                            # mouse_control.move(coords[0], coords[1])
                     elif col_names[i] == 'mouse_y_normalized':
                         coords[1] = predictions[i][0][0] * 876
                         if coords[0] != -1000:
-                            mouse_control.move(coords[0], coords[1])
+                            pass
+                            # mouse_control.move(coords[0], coords[1])
 
                     elif predictions[i][0, 1] >= .5:
-                        pass
                         key = col_names[i].split('_')[0]
 
                         if i % 2 == 0:

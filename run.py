@@ -51,11 +51,11 @@ def build_model():
     km = KeyModel(json_address=minecraft_json,
                   initial_learn_rate=.004,
                   epochs=20,
-                  batch_size=48,
+                  batch_size=60,
                   keys=generate_column_names(tree_farm_keys),
                   mouse=True)
 
-    km.build_model()
+    km.build_model(model_address="D:/Python Projects/gameBot/models/tree_farm", batch_length_multiplier=3)
 
 
 def make_predictions():
@@ -64,7 +64,7 @@ def make_predictions():
     predictor.run_predictions()
 
 
-make_predictions()
+build_model()
 # check tf.memory() after each frame/batch?
 
 # ['w_press', 'w_release'] no mouse: 80% memory 90% cpu
