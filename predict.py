@@ -114,9 +114,9 @@ class Predictor:
 
                 # Do basic processing on frame to prepare it for model
                 frame = np.array(image)
-                frame = resize_np_image(frame, .1)
+                frame = resize_np_image(frame, .05)
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = np.asarray(frame).astype('float16').reshape((1, 87, 161, 3))
+                frame = np.asarray(frame).astype('float16').reshape((1, 43, 80, 3))
                 frame = (frame + 1) / 256
 
                 # Output predictions from model

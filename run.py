@@ -19,7 +19,7 @@ minecraft_all_keys = ('1', '2', '3', '4', '5', '6', '7', '8', '9',
                       'lmouse', 'rmouse')
 
 tree_farm_keys = ('1', '2', '3',
-                  # 'w', 'a', 's', 'd',
+                  #  'w', 'a', 's', 'd',
                   # 'e', 'shift',
                   'lmouse', 'rmouse')
 
@@ -43,15 +43,15 @@ def build_dataset(record_seconds):
 
     efr = EmptyFrameRemover(minecraft_json)
     # Clean up json read/write in EmptyFrameRemover
-    efr.remove_empty_frames(processed_csv, processed_avi, .1)
+    efr.remove_empty_frames(processed_csv, processed_avi, .05, generate_column_names(tree_farm_keys))
     print('successfully removed empty frames')
 
 
 def build_model():
     km = KeyModel(json_address=minecraft_json,
-                  initial_learn_rate=.004,
-                  epochs=20,
-                  batch_size=60,
+                  initial_learn_rate=.01,
+                  epochs=10,
+                  batch_size=48,
                   keys=generate_column_names(tree_farm_keys),
                   mouse=True)
 
@@ -64,8 +64,4 @@ def make_predictions():
     predictor.run_predictions()
 
 
-build_model()
-# check tf.memory() after each frame/batch?
-
-# ['w_press', 'w_release'] no mouse: 80% memory 90% cpu
-# What kills memory is the cpu working too hard
+make_predictions()

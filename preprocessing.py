@@ -86,7 +86,7 @@ class EmptyFrameRemover:
             # Loop through specific columns and append string to see if columns are empty
             for col in search_cols:
                 code += '({0}[\'{1}\'] != 0.0) '.format('self.df_cleaned', col)
-                if i == len(df.columns) - 1:
+                if i == len(search_cols) - 1:
                     code += ']'
                 else:
                     code += '|'
